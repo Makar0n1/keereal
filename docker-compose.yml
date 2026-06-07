@@ -43,9 +43,20 @@ services:
       - uploads_data:/app/uploads
     expose:
       - "3000"
+    # Published on localhost only -> a HOST reverse proxy (e.g. an existing
+    # system nginx serving other sites) proxies the domain to this. Not exposed
+    # to the internet. Change 8090 if it clashes. In `standalone` mode the
+    # bundled nginx reaches the app over the docker network instead.
+    ports:
+      - "127.0.0.1:8090:3000"
 
+  # Bundled edge nginx (TLS on 80/443). ONLY for a dedicated server where these
+  # ports are free. Disabled by default — enable with `--profile standalone`.
+  # On a shared host that already runs nginx, leave it off and proxy from the
+  # host nginx to 127.0.0.1:8090 (see deploy/keereal.dev.nginx.conf).
   nginx:
     image: nginx:1.27-alpine
+    profiles: ["standalone"]
     restart: unless-stopped
     depends_on:
       - app
