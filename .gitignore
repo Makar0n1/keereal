@@ -18,6 +18,9 @@ next-env.d.ts
 # TLS certs / secrets — never commit
 /nginx/certs/
 
+# Local-only compose override (exposes DB port for host dev)
+docker-compose.override.yml
+
 # AI assistant
 CLAUDE.md
 .claude/

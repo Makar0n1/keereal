@@ -13,9 +13,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    # Exposed only for local administration; remove in production if not needed.
-    ports:
-      - "5432:5432"
+    # No host port: app/backup reach the DB over the internal docker network
+    # (db:5432). Don't expose Postgres to the host/internet in production. For
+    # local admin access, run `docker compose -f docker-compose.dev.yml` or
+    # temporarily add a ports mapping.
 
   app:
     build:
