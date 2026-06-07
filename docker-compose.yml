@@ -18,6 +18,24 @@ services:
     # local admin access, run `docker compose -f docker-compose.dev.yml` or
     # temporarily add a ports mapping.
 
+  # One-shot: applies migrations (+ optional seed) with the full Prisma CLI,
+  # then exits. The app waits for it to finish successfully.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      SESSION_SECRET: ${SESSION_SECRET}
+      RUN_SEED: ${RUN_SEED:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+
   app:
     build:
       context: .
@@ -29,15 +47,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
       SESSION_SECRET: ${SESSION_SECRET}
       UPLOADS_DIR: /app/uploads
       UPLOADS_PUBLIC_PREFIX: /uploads
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      RUN_SEED: ${RUN_SEED:-false}
       NODE_ENV: production
     volumes:
       - uploads_data:/app/uploads
