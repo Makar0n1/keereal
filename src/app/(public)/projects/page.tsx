@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getPublishedProjects } from "@/lib/data";
 import { ProjectCard } from "@/components/public/ProjectCard";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic"; // SSR; DB read at runtime, not build
 
 export const metadata: Metadata = {
   title: "Проекты",

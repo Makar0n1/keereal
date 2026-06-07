@@ -2,6 +2,9 @@ import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
 import { siteUrl } from "@/lib/env";
 
+// Generated at request time — the DB isn't reachable during the Docker build.
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const projects = await prisma.project.findMany({
     where: { status: "PUBLISHED" },

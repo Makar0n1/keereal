@@ -3,7 +3,7 @@ import { draftMode } from "next/headers";
 import { getStandalonePage, getSettings, toRenderableBlocks } from "@/lib/data";
 import { BlockList } from "@/widgets/render-registry";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic"; // SSR; DB read at runtime, not build
 
 export async function generateMetadata(): Promise<Metadata> {
   const s = await getSettings();

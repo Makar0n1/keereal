@@ -3,6 +3,8 @@ import { getSettings } from "@/lib/data";
 import { ContactForm } from "@/components/public/ContactForm";
 import { Reveal } from "@/components/public/Reveal";
 
+export const dynamic = "force-dynamic"; // SSR; settings read at runtime, not build
+
 export const metadata: Metadata = {
   title: "Контакты",
   description: "Свяжитесь со мной, чтобы обсудить проект.",

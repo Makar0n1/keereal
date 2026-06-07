@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
+# NEXT_PUBLIC_* are inlined at build time -> pass the real site URL so canonical
+# links / sitemap / OG images point to the production domain, not localhost.
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 RUN npm run build
 
 # --- runner ---

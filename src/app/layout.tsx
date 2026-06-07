@@ -3,6 +3,10 @@ import "./globals.css";
 import { siteUrl } from "@/lib/env";
 import { getSettings } from "@/lib/data";
 
+// The root layout reads settings (analytics snippet, metadata) from the DB,
+// which isn't reachable during the Docker build -> render everything per request.
+export const dynamic = "force-dynamic";
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,

@@ -8,14 +8,19 @@ import { siteUrl } from "@/lib/env";
 import { BlockList } from "@/widgets/render-registry";
 import { JsonLd } from "@/components/public/JsonLd";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic"; // SSR; DB read at runtime, not build
 
 export async function generateStaticParams() {
-  const projects = await prisma.project.findMany({
-    where: { status: "PUBLISHED" },
-    select: { slug: true },
-  });
-  return projects.map((p) => ({ slug: p.slug }));
+  // The Docker image builds without DB access -> never fail the build here.
+  try {
+    const projects = await prisma.project.findMany({
+      where: { status: "PUBLISHED" },
+      select: { slug: true },
+    });
+    return projects.map((p) => ({ slug: p.slug }));
+  } catch {
+    return [];
+  }
 }
 
 export async function generateMetadata({

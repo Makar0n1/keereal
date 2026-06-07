@@ -5,7 +5,9 @@ import { ProjectCard } from "@/components/public/ProjectCard";
 import { Reveal } from "@/components/public/Reveal";
 import { JsonLd } from "@/components/public/JsonLd";
 
-export const revalidate = 300; // ISR
+// SSR per request — data is read from the DB at runtime (the Docker image is
+// built without DB access). Still fully server-rendered for SEO/bots.
+export const dynamic = "force-dynamic";
 
 const SERVICES = [
   {
