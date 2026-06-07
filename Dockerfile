@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
+COPY scripts ./scripts
 COPY package.json ./
 COPY docker/migrate.sh ./migrate.sh
 RUN chmod +x ./migrate.sh
