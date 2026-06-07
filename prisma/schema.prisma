@@ -1,0 +1,247 @@
+// Portfolio data model.
+// Page = an ordered array of typed blocks (the page builder).
+// Project = a case study, which owns a Page of blocks.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum LeadStatus {
+  NEW
+  IN_PROGRESS
+  CLOSED
+}
+
+// The single admin user. Registration is disabled; created via seed/script.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Random opaque token stored hashed; the cookie holds the raw token.
+  tokenHash String   @unique
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Audit log for admin login attempts (success and failure).
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  userAgent String?
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@index([email, createdAt])
+}
+
+// A page is a generic container of blocks. Project pages reference a Page,
+// and standalone pages (e.g. /about) are Pages with a reserved key.
+model Page {
+  id        String        @id @default(cuid())
+  // For singleton pages like "about" — null for project-owned pages.
+  key       String?       @unique
+  status    PublishStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  blocks  Block[]
+  project Project?
+}
+
+// One block in the builder. `type` maps to a widget in the registry;
+// `data` is the widget's validated payload (no migrations to add widgets).
+model Block {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type      String
+  sort      Int      @default(0)
+  isVisible Boolean  @default(true)
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([pageId, sort])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique
+  // Short summary used on cards/listings.
+  excerpt     String        @default("")
+  coverId     String?
+  cover       Media?        @relation("ProjectCover", fields: [coverId], references: [id])
+  tags        String[]      @default([])
+  year        Int?
+  status      PublishStatus @default(DRAFT)
+  isFeatured  Boolean       @default(false)
+  sort        Int           @default(0)
+
+  // SEO
+  seoTitle       String?
+  seoDescription String?
+  ogImageId      String?
+  ogImage        Media?  @relation("ProjectOg", fields: [ogImageId], references: [id])
+
+  // The builder page that holds this case's blocks.
+  pageId String @unique
+  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, isFeatured])
+  @@index([sort])
+}
+
+// Uploaded image/video metadata. Files live on the storage adapter; the DB
+// keeps the canonical record + alt text (required for accessibility/SEO).
+model Media {
+  id        String   @id @default(cuid())
+  // Path/key within the storage adapter (e.g. "2026/06/abc.webp").
+  key       String   @unique
+  url       String
+  mimeType  String
+  width     Int?
+  height    Int?
+  size      Int?
+  alt       String   @default("")
+  createdAt DateTime @default(now())
+
+  projectCovers Project[] @relation("ProjectCover")
+  projectOgs    Project[] @relation("ProjectOg")
+}
+
+model Lead {
+  id         String     @id @default(cuid())
+  name       String
+  contact    String
+  message    String
+  pageSource String?
+  status     LeadStatus @default(NEW)
+  note       String?
+  ip         String?
+  createdAt  DateTime   @default(now())
+
+  // Links a lead to the unified person, so a lead and a chat from the same
+  // human are tied together.
+  visitorId String?
+  visitor   Visitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([visitorId])
+}
+
+// A unified person across the live chat and contact leads. Identified by a
+// persistent browser cookie and/or a matching normalized contact string.
+model Visitor {
+  id              String   @id @default(cuid())
+  // Opaque id stored in the visitor's cookie.
+  cookieId        String   @unique
+  name            String?
+  contact         String?
+  // Normalized contact (lowercased, digits-only for phones) used to merge the
+  // same person who arrives from chat and from the form.
+  contactKey      String?
+  ip              String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+
+  thread ChatThread?
+  leads  Lead[]
+
+  @@index([contactKey])
+}
+
+enum ChatSender {
+  VISITOR
+  ADMIN
+}
+
+// One conversation per visitor.
+model ChatThread {
+  id            String   @id @default(cuid())
+  visitorId     String   @unique
+  visitor       Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  // Unread counters maintained on write for cheap badges.
+  adminUnread   Int      @default(0)
+  visitorUnread Int      @default(0)
+  // "Last read" timestamps drive read receipts (a message is read if the other
+  // side's read time is at/after the message's createdAt) — no per-message writes.
+  adminReadAt   DateTime?
+  visitorReadAt DateTime?
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  messages ChatMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender    ChatSender
+  body      String
+  // Photo/file attachments: [{ type, url, name, size, mime, width?, height? }].
+  attachments Json     @default("[]")
+  // Telegram-style reactions: [{ emoji, by }]. At most one reaction per side.
+  reactions Json       @default("[]")
+  // Reply target (self-relation). Null = not a reply.
+  replyToId String?
+  replyTo   ChatMessage?  @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   ChatMessage[] @relation("MessageReply")
+  createdAt DateTime   @default(now())
+
+  @@index([threadId, createdAt])
+}
+
+// Global, editable site settings (singleton row id="global").
+model Setting {
+  id        String   @id @default("global")
+  // Identity / positioning
+  siteName       String  @default("Имя Фамилия")
+  role           String  @default("Фриланс-разработчик")
+  heroTitle      String  @default("Создаю продукты, которые работают")
+  heroSubtitle   String  @default("")
+  // Contacts / links
+  email          String  @default("")
+  telegram       String  @default("")
+  github         String  @default("")
+  // Free-form contact line shown on /contact
+  contactText    String  @default("")
+  // Analytics snippet injected into <head> (Yandex.Metrica / Plausible / etc.)
+  analyticsSnippet String @default("")
+
+  updatedAt DateTime @updatedAt
+}

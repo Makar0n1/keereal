@@ -1,0 +1,23 @@
+node_modules
+.next
+out
+build
+.env
+.env*.local
+*.log
+npm-debug.log*
+.DS_Store
+/uploads/*
+!/uploads/.gitkeep
+/backups/*
+!/backups/.gitkeep
+prisma/*.db
+next-env.d.ts
+*.tsbuildinfo
+
+# TLS certs / secrets — never commit
+/nginx/certs/
+
+# AI assistant
+CLAUDE.md
+.claude/
