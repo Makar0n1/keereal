@@ -11,10 +11,16 @@ export function middleware(req: NextRequest) {
     if (!hasCookie) {
       const url = req.nextUrl.clone();
       url.pathname = "/admin/login";
-      return NextResponse.redirect(url);
+      const redirect = NextResponse.redirect(url);
+      redirect.headers.set("X-Robots-Tag", "noindex, nofollow");
+      return redirect;
     }
   }
-  return NextResponse.next();
+  // Keep the whole admin area (login + panel) out of search indexes — the
+  // strongest signal, applied to every admin response.
+  const res = NextResponse.next();
+  res.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return res;
 }
 
 export const config = {
