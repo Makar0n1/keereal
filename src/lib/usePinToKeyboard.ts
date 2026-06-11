@@ -31,6 +31,26 @@ export function usePinToKeyboard(
     const now = () => performance.now();
     const isMobile = () => window.innerWidth <= maxWidth;
 
+    // In a real Safari TAB (not a standalone PWA) visualViewport.offsetTop is
+    // unreliable and Safari scrolls the page on input focus -> the panel "flies
+    // up for a split second, then returns". A reactive scroll guard pins the
+    // document at 0 so offsetTop stays ~0. Standalone PWA, Chrome and Firefox
+    // all behave and DON'T need it (it would only add micro-jank there).
+    const isStandalone =
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(display-mode: standalone)").matches) ||
+      (window.navigator as { standalone?: boolean }).standalone === true;
+    const isWebKit = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(
+      navigator.userAgent
+    );
+    const guard = isWebKit && !isStandalone;
+    let focused = false;
+    const killScroll = () => {
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+      const de = document.scrollingElement as HTMLElement | null;
+      if (de && de.scrollTop !== 0) de.scrollTop = 0;
+    };
+
     let prevH = 0;
     let anchorBottom: number | null = null;
     let chromeH = 0;
@@ -76,6 +96,7 @@ export function usePinToKeyboard(
         return;
       }
 
+      if (guard && focused) killScroll(); // Safari tab: pin doc scroll to 0
       const h = vv.height;
       const top = vv.offsetTop; // SNAPPED — no easing, so no slow drift.
       const changed = Math.abs(h - prevH) > 1;
@@ -120,13 +141,24 @@ export function usePinToKeyboard(
         });
       }
     };
+    // Safari tab only: snap the page back to 0 the instant Safari tries to
+    // scroll it on focus (one frame late, hence a faint shimmer — but no fly).
+    const onScroll = () => {
+      if (guard && focused) killScroll();
+    };
     const onFocusIn = () => {
       if (!isMobile()) return;
+      focused = true;
       anchorBottom = captureAnchor();
+      if (guard) {
+        killScroll();
+        apply(); // shrink synchronously before Safari decides to scroll
+      }
       pump(900); // cover the keyboard open animation
     };
     const onFocusOut = () => {
       if (!isMobile()) return;
+      focused = false;
       anchorBottom = captureAnchor();
       pump(700); // cover the keyboard close animation
     };
@@ -135,15 +167,22 @@ export function usePinToKeyboard(
     vv.addEventListener("resize", onEvent);
     vv.addEventListener("scroll", onEvent);
     window.addEventListener("resize", onEvent);
+    if (guard) {
+      window.addEventListener("scroll", onScroll, true);
+      document.addEventListener("scroll", onScroll, true);
+    }
     panel.addEventListener("focusin", onFocusIn);
     panel.addEventListener("focusout", onFocusOut);
     return () => {
       if (raf) cancelAnimationFrame(raf);
       if (release) clearTimeout(release);
       loopUntil = 0;
+      focused = false;
       vv.removeEventListener("resize", onEvent);
       vv.removeEventListener("scroll", onEvent);
       window.removeEventListener("resize", onEvent);
+      window.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("scroll", onScroll, true);
       panel.removeEventListener("focusin", onFocusIn);
       panel.removeEventListener("focusout", onFocusOut);
       panel.style.height = "";
