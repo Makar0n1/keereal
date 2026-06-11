@@ -132,14 +132,16 @@ export function usePinToKeyboard(
       const changed = Math.abs(h - prevH) > 1;
       if (changed && anchorBottom === null) anchorBottom = captureAnchor();
 
-      // App-shell: <body> is owned by the lock (fixed, 100%) — the normal-flow
-      // panel just resizes its own height; setting `top` would offset it.
-      // Fixed-overlay path: conform body to the viewport + track the offset.
-      if (!appShell) {
-        document.body.style.height = `${h}px`;
-        panel.style.top = `${top}px`;
-      }
+      // App-shell: <body> is owned by the lock (fixed, 100%) — don't touch its
+      // height. Fixed-overlay path conforms body to the viewport.
+      if (!appShell) document.body.style.height = `${h}px`;
       panel.style.height = `${h}px`;
+      // Compensate Safari's visual-viewport offset on focus: it shifts the
+      // visible area down by `offsetTop`, so without this the panel sits too
+      // high (input ends up at the very top). On the relative app-shell panel
+      // `top` nudges it back down into view; on the fixed overlay it IS the
+      // viewport position. Snapped (no easing) — it's smooth now.
+      panel.style.top = `${top}px`;
 
       if (changed && sc && anchorBottom !== null) {
         const msgH = Math.max(0, h - chromeH);
