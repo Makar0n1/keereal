@@ -2,9 +2,12 @@
 
 import { useEffect } from "react";
 
-// Locks page scroll behind a fullscreen mobile overlay (chat). Uses the
-// iOS-safe `position: fixed` technique so focusing an input can't scroll the
-// page underneath. Only engages on small screens (<= maxWidth).
+// Locks page scroll behind a fullscreen mobile overlay (chat). Telegram-Web
+// recipe: BOTH <html> and <body> get `position: fixed` so the document is
+// genuinely non-scrollable — body alone does NOT stop iOS Safari (in a browser
+// tab) from scrolling the page / offsetting the visual viewport on input focus,
+// which is what made the chat "fly / jitter" there. Only engages on small
+// screens (<= maxWidth).
 export function useBodyScrollLock(active: boolean, maxWidth = 1024) {
   useEffect(() => {
     if (!active || typeof window === "undefined") return;
@@ -14,36 +17,59 @@ export function useBodyScrollLock(active: boolean, maxWidth = 1024) {
     const body = document.body;
     const html = document.documentElement;
     const prev = {
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      width: body.style.width,
-      overflow: body.style.overflow,
-      htmlOverflow: html.style.overflow,
-      htmlOverscroll: html.style.overscrollBehavior,
+      bPosition: body.style.position,
+      bTop: body.style.top,
+      bLeft: body.style.left,
+      bRight: body.style.right,
+      bWidth: body.style.width,
+      bHeight: body.style.height,
+      bOverflow: body.style.overflow,
+      hPosition: html.style.position,
+      hTop: html.style.top,
+      hLeft: html.style.left,
+      hRight: html.style.right,
+      hWidth: html.style.width,
+      hHeight: html.style.height,
+      hOverflow: html.style.overflow,
+      hOverscroll: html.style.overscrollBehavior,
     };
 
+    // <html>: fully pinned to the viewport — nothing for Safari to scroll.
+    html.style.position = "fixed";
+    html.style.top = "0";
+    html.style.left = "0";
+    html.style.right = "0";
+    html.style.width = "100%";
+    html.style.height = "100%";
+    html.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+
+    // <body>: also fixed, offset by the current scroll so the page underneath
+    // keeps its visual position while locked.
     body.style.position = "fixed";
     body.style.top = `-${scrollY}px`;
     body.style.left = "0";
     body.style.right = "0";
     body.style.width = "100%";
+    body.style.height = "100%";
     body.style.overflow = "hidden";
-    // Lock the document element too — body position:fixed alone does NOT stop
-    // iOS Safari from scrolling the page on input focus.
-    html.style.overflow = "hidden";
-    html.style.overscrollBehavior = "none";
 
     return () => {
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.left = prev.left;
-      body.style.right = prev.right;
-      body.style.width = prev.width;
-      body.style.overflow = prev.overflow;
-      html.style.overflow = prev.htmlOverflow;
-      html.style.overscrollBehavior = prev.htmlOverscroll;
+      body.style.position = prev.bPosition;
+      body.style.top = prev.bTop;
+      body.style.left = prev.bLeft;
+      body.style.right = prev.bRight;
+      body.style.width = prev.bWidth;
+      body.style.height = prev.bHeight;
+      body.style.overflow = prev.bOverflow;
+      html.style.position = prev.hPosition;
+      html.style.top = prev.hTop;
+      html.style.left = prev.hLeft;
+      html.style.right = prev.hRight;
+      html.style.width = prev.hWidth;
+      html.style.height = prev.hHeight;
+      html.style.overflow = prev.hOverflow;
+      html.style.overscrollBehavior = prev.hOverscroll;
       window.scrollTo(0, scrollY);
     };
   }, [active, maxWidth]);
