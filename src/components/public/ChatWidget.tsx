@@ -259,18 +259,48 @@ export function ChatWidget() {
     const page = document.getElementById("pf-page");
     const html = document.documentElement;
     const body = document.body;
-    const prev = {
-      pageDisplay: page?.style.display ?? "",
-      htmlOverflow: html.style.overflow,
-      bodyOverflow: body.style.overflow,
+    const save = (el: HTMLElement) => ({
+      position: el.style.position,
+      top: el.style.top,
+      left: el.style.left,
+      right: el.style.right,
+      width: el.style.width,
+      height: el.style.height,
+      overflow: el.style.overflow,
+    });
+    const prevHtml = save(html);
+    const prevBody = save(body);
+    const prevPageDisplay = page?.style.display ?? "";
+    // Full Telegram-style document lock: <html> AND <body> pinned to the
+    // viewport (overflow:hidden alone does NOT stop Safari scrolling the page on
+    // focus). With the page hidden + the panel rendered as normal-flow content
+    // inside this fixed shell, Safari has nothing to scroll and the input has no
+    // position:fixed ancestor -> clean.
+    const lock = (el: HTMLElement) => {
+      el.style.position = "fixed";
+      el.style.top = "0";
+      el.style.left = "0";
+      el.style.right = "0";
+      el.style.width = "100%";
+      el.style.height = "100%";
+      el.style.overflow = "hidden";
     };
     if (page) page.style.display = "none";
-    html.style.overflow = "hidden";
-    body.style.overflow = "hidden";
+    lock(html);
+    lock(body);
     return () => {
-      if (page) page.style.display = prev.pageDisplay;
-      html.style.overflow = prev.htmlOverflow;
-      body.style.overflow = prev.bodyOverflow;
+      const restore = (el: HTMLElement, p: ReturnType<typeof save>) => {
+        el.style.position = p.position;
+        el.style.top = p.top;
+        el.style.left = p.left;
+        el.style.right = p.right;
+        el.style.width = p.width;
+        el.style.height = p.height;
+        el.style.overflow = p.overflow;
+      };
+      if (page) page.style.display = prevPageDisplay;
+      restore(html, prevHtml);
+      restore(body, prevBody);
       window.scrollTo(0, scrollY);
     };
   }, [panelRender, isMobile]);

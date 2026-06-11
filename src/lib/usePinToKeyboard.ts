@@ -132,13 +132,14 @@ export function usePinToKeyboard(
       const changed = Math.abs(h - prevH) > 1;
       if (changed && anchorBottom === null) anchorBottom = captureAnchor();
 
-      // Telegram-style: the locked document body conforms to the visual viewport
-      // and the panel fills it. Only the height ever animates; top is ~0.
-      document.body.style.height = `${h}px`;
+      // App-shell: <body> is owned by the lock (fixed, 100%) — the normal-flow
+      // panel just resizes its own height; setting `top` would offset it.
+      // Fixed-overlay path: conform body to the viewport + track the offset.
+      if (!appShell) {
+        document.body.style.height = `${h}px`;
+        panel.style.top = `${top}px`;
+      }
       panel.style.height = `${h}px`;
-      // App-shell panel is normal-flow (not fixed) — setting `top` would offset
-      // it. Only the fixed-overlay path tracks the viewport offset.
-      if (!appShell) panel.style.top = `${top}px`;
 
       if (changed && sc && anchorBottom !== null) {
         const msgH = Math.max(0, h - chromeH);
