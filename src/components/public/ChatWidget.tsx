@@ -12,7 +12,6 @@ import { ChatLightbox } from "@/components/chat/ChatLightbox";
 import { StagedStrip, type StagedFile } from "@/components/chat/StagedStrip";
 import { applyReactionToggle } from "@/components/chat/reactions";
 import { sanitizeChatBody } from "@/lib/chat-text";
-import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { usePinToKeyboard } from "@/lib/usePinToKeyboard";
 import { useChatAttachmentSend } from "@/lib/useChatAttachmentSend";
 import { validateFile } from "@/lib/chat-media";
@@ -92,12 +91,13 @@ export function ChatWidget() {
   // Promo nudge bubble above the launcher. Shows on every visit until the
   // visitor dismisses it (X) or opens the chat — both persist in localStorage.
   const [badgeShown, setBadgeShown] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  // Lock page scroll + pin the panel to the keyboard on mobile.
-  useBodyScrollLock(panelRender, 639);
-  usePinToKeyboard(panelRef, scrollRef, panelRender, 639);
+  // On mobile the chat is a normal-flow app-shell (page hidden, no fixed) — pass
+  // appShell so the keyboard hook only resizes height (no Safari workarounds).
+  usePinToKeyboard(panelRef, scrollRef, panelRender, 639, isMobile);
   const lastTypingSent = useRef(0);
   const typingHide = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Used ONLY inside event handlers (never inside a setState updater) to dedup
@@ -239,6 +239,41 @@ export function ChatWidget() {
   useEffect(() => {
     localStorage.setItem("pf_chat_open", open ? "1" : "0");
   }, [open]);
+
+  // Track mobile breakpoint (drives the app-shell rendering).
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 639);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  // Mobile app-shell lock: while the chat is open, hide the page and stop the
+  // document from scrolling. The chat then renders as a normal-flow element
+  // filling the viewport (no position:fixed around the input, no scrollable
+  // background) — which is the only thing that fully kills the iOS Safari-tab
+  // keyboard jump. Restores page + scroll position on close.
+  useEffect(() => {
+    if (!panelRender || !isMobile) return;
+    const scrollY = window.scrollY;
+    const page = document.getElementById("pf-page");
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = {
+      pageDisplay: page?.style.display ?? "",
+      htmlOverflow: html.style.overflow,
+      bodyOverflow: body.style.overflow,
+    };
+    if (page) page.style.display = "none";
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      if (page) page.style.display = prev.pageDisplay;
+      html.style.overflow = prev.htmlOverflow;
+      body.style.overflow = prev.bodyOverflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [panelRender, isMobile]);
 
   // Show the promo badge shortly after load, unless it was dismissed before.
   useEffect(() => {
@@ -612,11 +647,13 @@ export function ChatWidget() {
         <div
           ref={panelRef}
           className={cn(
-            // Mobile: fullscreen app-style sheet. height/top are set imperatively
-            // by usePinToKeyboard to track the keyboard with zero lag.
-            "fixed left-0 top-0 z-[95] flex h-[100dvh] w-full flex-col overflow-hidden bg-bg-soft",
-            // Desktop: floating panel bottom-right.
-            "sm:inset-auto sm:bottom-24 sm:right-[max(1.25rem,calc(50vw_-_36rem_-_0.75rem))] sm:h-[min(34rem,75vh)] sm:w-[min(24rem,calc(100vw-2.5rem))] sm:rounded-2xl sm:border sm:border-bg-border sm:shadow-2xl",
+            // Mobile: NORMAL-FLOW app-shell (not fixed) filling the viewport with
+            // the page hidden behind it — no position:fixed around the input, no
+            // scrollable background, so iOS Safari can't jump. Height is set
+            // imperatively by usePinToKeyboard to follow the keyboard.
+            "relative z-[95] flex h-[100dvh] w-full flex-col overflow-hidden bg-bg-soft",
+            // Desktop: floating fixed panel bottom-right.
+            "sm:fixed sm:inset-auto sm:bottom-24 sm:right-[max(1.25rem,calc(50vw_-_36rem_-_0.75rem))] sm:h-[min(34rem,75vh)] sm:w-[min(24rem,calc(100vw-2.5rem))] sm:rounded-2xl sm:border sm:border-bg-border sm:shadow-2xl",
             // Only the open/close genie animates. height/top are tracked per
             // frame imperatively and MUST be instant (no transition).
             // IMPORTANT: when OPEN the panel must have `transform: none` — on iOS

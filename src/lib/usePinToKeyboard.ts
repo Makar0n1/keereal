@@ -21,11 +21,17 @@ import { useEffect, type RefObject } from "react";
 // first focus of the next open is already accurate.
 let cachedKb = 0;
 
+// `appShell`: the chat is rendered as a normal-flow element inside a
+// non-scrolling document (page hidden, no position:fixed around the input — see
+// ChatWidget). That structure removes BOTH causes of the iOS Safari quirk
+// (scrollable page + input inside position:fixed), so we don't need the guard,
+// the pre-shrink, or any `top` handling at all — only resize the height.
 export function usePinToKeyboard(
   panelRef: RefObject<HTMLElement | null>,
   scrollRef: RefObject<HTMLElement | null>,
   active: boolean,
-  maxWidth: number
+  maxWidth: number,
+  appShell = false
 ) {
   useEffect(() => {
     if (!active) return;
@@ -48,7 +54,9 @@ export function usePinToKeyboard(
     const isWebKit = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(
       navigator.userAgent
     );
-    const guard = isWebKit && !isStandalone;
+    // App-shell removes the root cause, so the Safari-tab guard/pre-shrink is
+    // unnecessary there (and would only fight a problem that no longer exists).
+    const guard = isWebKit && !isStandalone && !appShell;
     let focused = false;
     let baseH = 0; // full visible height captured at focus (no keyboard yet)
     let preShrink = false; // Safari tab: hold the input high before Safari scrolls
@@ -128,7 +136,9 @@ export function usePinToKeyboard(
       // and the panel fills it. Only the height ever animates; top is ~0.
       document.body.style.height = `${h}px`;
       panel.style.height = `${h}px`;
-      panel.style.top = `${top}px`;
+      // App-shell panel is normal-flow (not fixed) — setting `top` would offset
+      // it. Only the fixed-overlay path tracks the viewport offset.
+      if (!appShell) panel.style.top = `${top}px`;
 
       if (changed && sc && anchorBottom !== null) {
         const msgH = Math.max(0, h - chromeH);
@@ -214,5 +224,5 @@ export function usePinToKeyboard(
       panel.style.top = "";
       document.body.style.height = "";
     };
-  }, [active, maxWidth, panelRef, scrollRef]);
+  }, [active, maxWidth, panelRef, scrollRef, appShell]);
 }

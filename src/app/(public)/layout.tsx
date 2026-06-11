@@ -10,14 +10,19 @@ export default async function PublicLayout({
 }) {
   const s = await getSettings();
   return (
-    <div className="flex min-h-screen flex-col">
-      <Header siteName={s.siteName} />
-      <main className="flex-1">{children}</main>
-      <Footer
-        siteName={s.siteName}
-        links={{ telegram: s.telegram, github: s.github, email: s.email }}
-      />
+    <>
+      {/* Page content, hidden on mobile while the chat app-shell is open so
+          Safari has no scrollable background to scroll on input focus. */}
+      <div id="pf-page" className="flex min-h-screen flex-col">
+        <Header siteName={s.siteName} />
+        <main className="flex-1">{children}</main>
+        <Footer
+          siteName={s.siteName}
+          links={{ telegram: s.telegram, github: s.github, email: s.email }}
+        />
+      </div>
+      {/* Outside #pf-page so hiding the page never hides the chat. */}
       <ChatWidget />
-    </div>
+    </>
   );
 }
