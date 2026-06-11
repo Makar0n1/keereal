@@ -62,7 +62,7 @@ export function ChatConsole() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
   // New app-shell keyboard handling (same as the guest chat; see CLAUDE.md §6.5e).
-  const { isMobile, bottomPad, kbUpPad, kbUp } = useChatAppShell(
+  const { isMobile, bottomPad, kbUpPad, kbUp, stickyShow, isFirefox } = useChatAppShell(
     activeId !== null,
     paneRef,
     stickyHeaderRef,
@@ -649,6 +649,47 @@ export function ChatConsole() {
             );
             return isMobile ? createPortal(overlay, document.body) : overlay;
           })()
+        : null}
+
+      {/* Sticky header (mobile, keyboard up): the real header scrolls off, so a
+          compact back + name bar slides in from the top. Portaled to <body>
+          because #admin-shell (where it'd otherwise live) is hidden. Skipped on
+          Firefox, where the header doesn't scroll off. */}
+      {activeId && isMobile && !isFirefox
+        ? createPortal(
+            <div
+              ref={stickyHeaderRef}
+              className="pointer-events-none fixed left-0 right-0 z-[61] overflow-hidden"
+              style={{ top: 0 }}
+            >
+              <div
+                className={cn(
+                  "flex items-center gap-2 border-b border-bg-border bg-bg-soft/95 px-3 py-3 backdrop-blur transition-all duration-300 ease-out",
+                  stickyShow
+                    ? "pointer-events-auto translate-y-0 opacity-100"
+                    : "pointer-events-none -translate-y-full opacity-0"
+                )}
+              >
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={closeThread}
+                  aria-label="Назад"
+                  className="-ml-1 flex shrink-0 items-center rounded-md px-1.5 py-1 text-fg-muted transition hover:text-fg"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-fg">
+                    {visitor?.name || "Гость"}
+                  </p>
+                  <p className="truncate text-xs text-fg-muted">
+                    {visitor?.contact || "контакт не указан"}
+                  </p>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
         : null}
     </div>
   );

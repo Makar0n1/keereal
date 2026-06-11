@@ -36,8 +36,8 @@ export function useChatAppShell(
     const crios = /crios/i.test(ua);
     const firefox = /fxios|firefox/i.test(ua);
     const safari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
-    setBottomPad(crios ? "pb-5" : "pb-3");
-    setKbUpPad(safari ? "pb-6" : crios ? "pb-[1.875rem]" : "pb-3");
+    setBottomPad(crios ? "pb-[120px]" : safari ? "pb-[46px]" : "pb-3");
+    setKbUpPad(safari ? "pb-[62px]" : crios ? "pb-[118px]" : "pb-3");
     setIsFirefox(firefox);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
@@ -49,7 +49,6 @@ export function useChatAppShell(
     const scrollY = window.scrollY;
     const html = document.documentElement;
     const body = document.body;
-    const pane = paneRef.current;
     const isIOS =
       /iphone|ipad|ipod/i.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -76,16 +75,11 @@ export function useChatAppShell(
     const setH = () => {
       const h = `${vv ? vv.height : window.innerHeight}px`;
       const offTop = `${vv ? vv.offsetTop : 0}px`;
+      // Exactly like the guest: size ONLY html/body to the visible viewport; the
+      // pane is h-full (inherits) and we never touch its top/height. Anything
+      // extra (pane top/height tracking) made Safari fly the composer.
       html.style.height = h;
       body.style.height = h;
-      if (pane) {
-        pane.style.height = h;
-        // The pane is a position:fixed overlay (admin) — fixed elements don't
-        // follow the visual-viewport offset on iOS, so when the keyboard opens
-        // the composer "flies up". Track offsetTop so the pane stays glued to
-        // the visible area. (Guest panel is normal-flow and doesn't need this.)
-        pane.style.top = offTop;
-      }
       if (stickyHeaderRef.current) {
         stickyHeaderRef.current.style.top = offTop;
       }
@@ -140,10 +134,6 @@ export function useChatAppShell(
       restore(html, prevHtml);
       restore(body, prevBody);
       if (page) page.style.display = prevPageDisplay;
-      if (pane) {
-        pane.style.height = "";
-        pane.style.top = "";
-      }
       window.scrollTo(0, scrollY);
     };
   }, [active, isMobile, paneRef, stickyHeaderRef, pageHideId]);

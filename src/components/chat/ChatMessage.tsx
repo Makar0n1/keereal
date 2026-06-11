@@ -248,20 +248,28 @@ export function ChatMessage({
       const rect = bubbleRef.current?.getBoundingClientRect();
       if (rect) onOpenContext(m.id, rect);
     };
-    // Mobile: if the keyboard is up, drop it first and wait for the panel to
-    // expand, then open the menu by the message's NEW position (otherwise the
-    // keyboard hides the menu items / breaks positioning).
+    // Mobile, keyboard up: keep the keyboard UP and open the menu in place when
+    // the message + its menu (reactions above + actions below ~ 130px) still fit
+    // in the visible area above the keyboard. Only drop the keyboard when it
+    // wouldn't fit (a tall message) or for images — then wait for the panel to
+    // expand and open by the message's NEW position.
     const active = document.activeElement as HTMLElement | null;
     const keyboardUp =
       fromTouch && active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT");
     if (keyboardUp) {
-      active!.blur();
-      // Give the keyboard time to fully collapse and the panel height to settle
-      // before measuring + opening (otherwise the blur/menu slide mid-animation).
-      setTimeout(doOpen, 900);
-    } else {
-      doOpen();
+      const rect = bubbleRef.current?.getBoundingClientRect();
+      const visH = window.visualViewport?.height ?? window.innerHeight;
+      const hasImage = m.attachments?.some((a) => a.type === "image");
+      const tooBig = !rect || rect.height + 130 > visH;
+      if (hasImage || tooBig) {
+        active!.blur();
+        // Let the keyboard fully collapse + the panel settle before opening.
+        setTimeout(doOpen, 900);
+        return;
+      }
+      // Fits — keep the keyboard, open the menu over it.
     }
+    doOpen();
   }
 
   function clearLong() {
