@@ -554,7 +554,7 @@ export function ChatWidget() {
           // Align with the site container's right edge (max-w-content = 72rem + px-5),
           // not the raw viewport edge, so it doesn't float off in the far corner on
           // wide screens. Clamps to 1.25rem on narrow screens.
-          "fixed bottom-5 right-[max(1.25rem,calc(50vw_-_36rem_+_1.25rem))] z-[95] h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 transition hover:scale-105",
+          "fixed bottom-8 right-[max(1.25rem,calc(50vw_-_36rem_-_0.75rem))] z-[95] h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 transition hover:scale-105",
           // On mobile the fullscreen chat has its own close (X) in the header,
           // so hide this floating button while open. Keep it on desktop.
           open ? "hidden sm:flex" : "flex"
@@ -572,7 +572,7 @@ export function ChatWidget() {
           its tail lines up; dismiss (X) or opening the chat hides it for good. */}
       {badgeShown && !open ? (
         <div
-          className="fixed bottom-[5.75rem] right-[max(1.25rem,calc(50vw_-_36rem_+_1.25rem))] z-[94] w-60 max-w-[calc(100vw-2.5rem)] animate-fade-in"
+          className="fixed bottom-[6.5rem] right-[max(1.25rem,calc(50vw_-_36rem_-_0.75rem))] z-[94] w-60 max-w-[calc(100vw-2.5rem)] animate-fade-in"
         >
           <div className="relative rounded-2xl border border-bg-border bg-bg-card p-3.5 pr-9 shadow-2xl shadow-black/40">
             <button
@@ -616,7 +616,7 @@ export function ChatWidget() {
             // by usePinToKeyboard to track the keyboard with zero lag.
             "fixed left-0 top-0 z-[95] flex h-[100dvh] w-full flex-col overflow-hidden bg-bg-soft",
             // Desktop: floating panel bottom-right.
-            "sm:inset-auto sm:bottom-24 sm:right-[max(1.25rem,calc(50vw_-_36rem_+_1.25rem))] sm:h-[min(34rem,75vh)] sm:w-[min(24rem,calc(100vw-2.5rem))] sm:rounded-2xl sm:border sm:border-bg-border sm:shadow-2xl",
+            "sm:inset-auto sm:bottom-24 sm:right-[max(1.25rem,calc(50vw_-_36rem_-_0.75rem))] sm:h-[min(34rem,75vh)] sm:w-[min(24rem,calc(100vw-2.5rem))] sm:rounded-2xl sm:border sm:border-bg-border sm:shadow-2xl",
             // Only the open/close genie animates. height/top are tracked per
             // frame imperatively and MUST be instant (no transition).
             // IMPORTANT: when OPEN the panel must have `transform: none` — on iOS
