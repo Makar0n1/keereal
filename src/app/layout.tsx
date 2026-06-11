@@ -35,6 +35,8 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
+    // iOS standalone web app (home-screen install) — needed for Web Push.
+    appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: s.siteName },
   };
 }
 

@@ -32,6 +32,22 @@ model User {
   updatedAt    DateTime @updatedAt
 
   sessions Session[]
+  pushSubs PushSubscription[]
+}
+
+// Web Push subscription for the admin's installed PWA, so new-message
+// notifications arrive even when the admin app is closed/backgrounded.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Session {

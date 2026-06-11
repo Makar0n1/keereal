@@ -8,6 +8,7 @@ import {
   type Reaction,
   type Attachment,
 } from "./chat-bus";
+import { sendPushToAdmins } from "./push";
 
 export const MAX_BODY = 4000;
 export const MAX_ATTACHMENTS = 5;
@@ -156,6 +157,26 @@ export async function postVisitorMessage(
   const evt = toEventMessage(message);
   publishToAdmin({ kind: "message", threadId: thread.id, visitorId, message: evt });
   publishToVisitor(visitorId, { kind: "message", threadId: thread.id, visitorId, message: evt });
+
+  // Web Push so the admin is notified even with the app closed. Fire-and-forget
+  // (name lookup + delivery must not delay the visitor's send response).
+  void (async () => {
+    const v = await prisma.visitor.findUnique({
+      where: { id: visitorId },
+      select: { name: true },
+    });
+    const preview = body.trim()
+      ? body.trim()
+      : attachments.length
+        ? "📎 Вложение"
+        : "Новое сообщение";
+    await sendPushToAdmins({
+      title: v?.name ? `💬 ${v.name}` : "💬 Новое сообщение",
+      body: preview.slice(0, 140),
+      tag: `thread-${thread.id}`,
+    });
+  })().catch(() => {});
+
   return message;
 }
 

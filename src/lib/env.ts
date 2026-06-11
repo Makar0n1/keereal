@@ -8,6 +8,11 @@ const serverSchema = z.object({
   UPLOADS_DIR: z.string().default("./uploads"),
   UPLOADS_PUBLIC_PREFIX: z.string().default("/uploads"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  // Web Push (optional): if unset, push notifications are simply disabled and
+  // the app falls back to in-tab notifications only.
+  VAPID_PUBLIC_KEY: z.string().optional().default(""),
+  VAPID_PRIVATE_KEY: z.string().optional().default(""),
+  VAPID_SUBJECT: z.string().optional().default("mailto:admin@example.com"),
 });
 
 const parsed = serverSchema.safeParse(process.env);
@@ -31,6 +36,9 @@ export const env = parsed.success
       UPLOADS_DIR: process.env.UPLOADS_DIR ?? "./uploads",
       UPLOADS_PUBLIC_PREFIX: process.env.UPLOADS_PUBLIC_PREFIX ?? "/uploads",
       NODE_ENV: (process.env.NODE_ENV as "development" | "production" | "test") ?? "production",
+      VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY ?? "",
+      VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY ?? "",
+      VAPID_SUBJECT: process.env.VAPID_SUBJECT ?? "mailto:admin@example.com",
     };
 
 export const siteUrl = (

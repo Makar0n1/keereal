@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { AdminMobileNav } from "@/components/admin/AdminMobileNav";
 import { AdminChatProvider } from "@/components/admin/AdminChatProvider";
+import { PushSetup } from "@/components/admin/PushSetup";
 import { ExternalLink } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,10 @@ export default async function PanelLayout({
             </div>
           </aside>
 
-          <div className="min-w-0 flex-1">{children}</div>
+          <div className="min-w-0 flex-1">
+            <PushSetup />
+            {children}
+          </div>
         </div>
       </div>
     </AdminChatProvider>
