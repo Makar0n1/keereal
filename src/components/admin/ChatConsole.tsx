@@ -14,8 +14,7 @@ import { ChatLightbox } from "@/components/chat/ChatLightbox";
 import { StagedStrip, type StagedFile } from "@/components/chat/StagedStrip";
 import { applyReactionToggle } from "@/components/chat/reactions";
 import { sanitizeChatBody } from "@/lib/chat-text";
-import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
-import { usePinToKeyboard } from "@/lib/usePinToKeyboard";
+import { useChatAppShell } from "@/lib/useChatAppShell";
 import { useChatAttachmentSend } from "@/lib/useChatAttachmentSend";
 import { validateFile } from "@/lib/chat-media";
 import { ArrowLeft, X, Inbox, Send, ChevronDown } from "lucide-react";
@@ -60,9 +59,14 @@ export function ChatConsole() {
   const paneRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  // Lock page scroll + pin the conversation to the keyboard on mobile.
-  useBodyScrollLock(activeId !== null, 1023);
-  usePinToKeyboard(paneRef, scrollRef, activeId !== null, 1023);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+  // New app-shell keyboard handling (same as the guest chat; see CLAUDE.md §6.5e).
+  const { isMobile, bottomPad, kbUpPad, kbUp, stickyShow, isFirefox } = useChatAppShell(
+    activeId !== null,
+    paneRef,
+    stickyHeaderRef,
+    1023
+  );
   const ids = useRef<Set<string>>(new Set());
   const lastTypingSent = useRef(0);
   const typingHide = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -502,7 +506,7 @@ export function ChatConsole() {
             <div className="relative flex min-h-0 flex-1 flex-col">
             <div ref={scrollRef} onScroll={onMessagesScroll} className="chat-scroll flex-1 overflow-y-auto p-4">
               {/* min-h-full + justify-end pins messages to the bottom */}
-              <div className="flex min-h-full flex-col justify-end space-y-2">
+              <div className="flex min-h-[calc(100%+1px)] flex-col justify-end space-y-2">
               {loading ? (
                 <p className="text-center text-sm text-fg-faint">Загрузка…</p>
               ) : (
@@ -564,36 +568,47 @@ export function ChatConsole() {
             </div>
 
             {/* Composer */}
-            <div className="border-t border-bg-border p-3">
+            <div
+              className={cn(
+                "border-t border-bg-border px-2.5 pt-2 lg:pb-3",
+                kbUp ? kbUpPad : bottomPad
+              )}
+            >
               {mediaError ? (
                 <p className="mb-2 rounded-md bg-red-500/15 px-2 py-1 text-xs text-red-300">{mediaError}</p>
               ) : null}
               {reply ? <ReplyBar body={reply.body} onCancel={() => setReply(null)} /> : null}
               <StagedStrip files={staged} onRemove={removeStaged} />
-              <div className="flex items-end gap-1.5">
-                <AttachButton onFiles={stageFiles} />
-                <div className="relative flex flex-1 items-end">
+              {/* Mobile: lightly-rounded pill (text · attach). Desktop: flat input
+                  with a full-width bottom border (emoji · text · attach). */}
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 items-center rounded-xl border border-bg-border bg-bg transition-colors lg:rounded-none lg:border-x-0 lg:border-t-0 lg:border-b lg:bg-transparent lg:focus-within:border-accent">
+                  <div className="hidden shrink-0 lg:block">
+                    <EmojiHover align="left" onPick={(e) => setInput((prev) => prev + e)} />
+                  </div>
                   <AutoTextarea
                     value={input}
                     onChange={onInputChange}
                     onSubmit={onSend}
                     inputRef={composerRef}
                     placeholder="Ответить…"
-                    className="w-full rounded-lg border border-bg-border bg-bg py-2 pl-3 pr-10 text-sm text-fg outline-none focus:border-accent"
+                    className="flex-1 resize-none bg-transparent py-2.5 pl-3.5 pr-1.5 text-sm text-fg outline-none placeholder:text-fg-faint lg:pl-1.5"
                   />
-                  <div className="absolute bottom-1.5 right-1.5">
-                    <EmojiHover onPick={(e) => setInput((prev) => prev + e)} />
+                  <div className="shrink-0">
+                    <AttachButton align="right" onFiles={stageFiles} />
                   </div>
                 </div>
-                <button
-                  onClick={onSend}
-                  onMouseDown={(e) => e.preventDefault()}
-                  disabled={sending || (staged.length === 0 && !sanitizeChatBody(input))}
-                  aria-label="Отправить"
-                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-accent text-white disabled:opacity-50"
-                >
-                  <Send size={16} />
-                </button>
+                {staged.length > 0 || sanitizeChatBody(input) ? (
+                  <button
+                    onClick={onSend}
+                    onMouseDown={(e) => e.preventDefault()}
+                    disabled={sending}
+                    aria-label="Отправить"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white shadow-sm transition active:scale-95 disabled:opacity-50"
+                  >
+                    <Send size={18} />
+                  </button>
+                ) : null}
               </div>
             </div>
           </>
@@ -603,6 +618,37 @@ export function ChatConsole() {
           <ChatLightbox images={lightbox.images} index={lightbox.index} onClose={() => setLightbox(null)} />
         ) : null}
       </div>
+
+      {/* Sticky header (mobile, keyboard up): the real header scrolls off, so a
+          compact back + name bar slides in from the visible-viewport top. */}
+      {activeId && isMobile && !isFirefox ? (
+        <div
+          ref={stickyHeaderRef}
+          className="pointer-events-none fixed left-0 right-0 z-[61] overflow-hidden"
+          style={{ top: 0 }}
+        >
+          <div
+            className={cn(
+              "flex items-center gap-2 border-b border-bg-border bg-bg-soft/95 px-3 py-3 backdrop-blur transition-all duration-300 ease-out",
+              stickyShow
+                ? "pointer-events-auto translate-y-0 opacity-100"
+                : "pointer-events-none -translate-y-full opacity-0"
+            )}
+          >
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={closeThread}
+              aria-label="Назад"
+              className="-ml-1 flex shrink-0 items-center rounded-md px-1.5 py-1 text-fg-muted transition hover:text-fg"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <p className="min-w-0 truncate text-sm font-semibold text-fg">
+              {visitor?.name || "Гость"}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {/* Focus overlay — outside the transformed pane (viewport-fixed). */}
       {ctx
