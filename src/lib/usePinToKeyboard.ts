@@ -16,6 +16,11 @@ import { useEffect, type RefObject } from "react";
 // The only engine-specific concession: Safari fires visualViewport events
 // sparsely during the keyboard animation, so on focus transitions we also poll
 // for a short window (rAF) to follow the animation frame-by-frame.
+
+// Remembered keyboard height (Safari tab pre-shrink). Module-scope so the very
+// first focus of the next open is already accurate.
+let cachedKb = 0;
+
 export function usePinToKeyboard(
   panelRef: RefObject<HTMLElement | null>,
   scrollRef: RefObject<HTMLElement | null>,
@@ -45,6 +50,8 @@ export function usePinToKeyboard(
     );
     const guard = isWebKit && !isStandalone;
     let focused = false;
+    let baseH = 0; // full visible height captured at focus (no keyboard yet)
+    let preShrink = false; // Safari tab: hold the input high before Safari scrolls
     const killScroll = () => {
       if (window.scrollY !== 0) window.scrollTo(0, 0);
       const de = document.scrollingElement as HTMLElement | null;
@@ -97,7 +104,22 @@ export function usePinToKeyboard(
       }
 
       if (guard && focused) killScroll(); // Safari tab: pin doc scroll to 0
-      const h = vv.height;
+      let h = vv.height;
+      // Safari tab: the instant the input is focused, shrink the panel to an
+      // ESTIMATED post-keyboard height so the input is already above where the
+      // keyboard will appear. Then Safari has no reason to scroll-to-reveal it,
+      // so it never offsets the viewport (no creeping background, no jitter).
+      // When the real keyboard height arrives we snap to it and remember it.
+      if (guard && preShrink) {
+        const realKb = baseH - vv.height;
+        if (realKb > 80) {
+          preShrink = false;
+          cachedKb = realKb;
+          h = vv.height;
+        } else {
+          h = baseH - (cachedKb || Math.round(baseH * 0.45));
+        }
+      }
       const top = vv.offsetTop; // SNAPPED — no easing, so no slow drift.
       const changed = Math.abs(h - prevH) > 1;
       if (changed && anchorBottom === null) anchorBottom = captureAnchor();
@@ -151,14 +173,17 @@ export function usePinToKeyboard(
       focused = true;
       anchorBottom = captureAnchor();
       if (guard) {
+        baseH = vv.height;
+        preShrink = true;
         killScroll();
-        apply(); // shrink synchronously before Safari decides to scroll
+        apply(); // shrink synchronously, before Safari decides to scroll
       }
       pump(900); // cover the keyboard open animation
     };
     const onFocusOut = () => {
       if (!isMobile()) return;
       focused = false;
+      preShrink = false;
       anchorBottom = captureAnchor();
       pump(700); // cover the keyboard close animation
     };
