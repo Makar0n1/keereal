@@ -43,7 +43,7 @@ export default async function HomePage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="bg-grid pointer-events-none absolute inset-0 -z-10 opacity-40" />
+        <div className="bg-grid pointer-events-none absolute inset-0 -z-10 opacity-[0.65]" />
         <div className="mx-auto max-w-content px-5 pb-12 pt-20 sm:pt-32">
           <Reveal>
             <p className="font-mono text-sm text-accent">{settings.role}</p>

@@ -23,7 +23,7 @@ export function Header({ siteName }: { siteName: string }) {
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border/60 bg-bg/80 backdrop-blur-lg">
       <div className="mx-auto flex max-w-content items-center justify-between px-5 py-4">
-        <Link href="/" className="font-mono text-sm font-semibold tracking-tight text-fg">
+        <Link href="/" className="font-mono text-[1.3125rem] font-semibold leading-none tracking-tight text-fg">
           {siteName}
         </Link>
 

@@ -71,8 +71,10 @@ body {
   background-image: linear-gradient(theme("colors.bg.border") 1px, transparent 1px),
     linear-gradient(90deg, theme("colors.bg.border") 1px, transparent 1px);
   background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+  /* Bigger, slower fade so the grid stays visible further down — it now reaches
+     over the hero text instead of dying out just under the header. */
+  -webkit-mask-image: radial-gradient(ellipse 110% 95% at 50% -5%, #000 45%, transparent 95%);
+  mask-image: radial-gradient(ellipse 110% 95% at 50% -5%, #000 45%, transparent 95%);
 }
 
 @media (prefers-reduced-motion: reduce) {
