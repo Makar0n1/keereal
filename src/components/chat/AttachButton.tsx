@@ -7,8 +7,10 @@ import { Plus, Image as ImageIcon, FileText } from "lucide-react";
 // (Photo / File). Keeps the keyboard open (onMouseDown preventDefault).
 export function AttachButton({
   onFiles,
+  align = "left",
 }: {
   onFiles: (files: File[], kind: "image" | "file") => void;
+  align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -50,7 +52,7 @@ export function AttachButton({
       </button>
 
       {open ? (
-        <div className="absolute bottom-11 left-0 z-[120] w-40 animate-context-pop overflow-hidden rounded-xl border border-bg-border bg-bg-soft py-1 shadow-xl">
+        <div className={`absolute bottom-11 ${align === "right" ? "right-0" : "left-0"} z-[120] w-40 animate-context-pop overflow-hidden rounded-xl border border-bg-border bg-bg-soft py-1 shadow-xl`}>
           <MenuItem icon={<ImageIcon size={16} className="text-accent" />} label="Фото" onClick={() => pick("image")} />
           <MenuItem icon={<FileText size={16} className="text-accent" />} label="Файл" onClick={() => pick("file")} />
         </div>

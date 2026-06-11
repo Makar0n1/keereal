@@ -35,6 +35,7 @@ export function ChatLightbox({
   let sy = 0;
   return (
     <div
+      data-chat-lightbox
       className="absolute inset-0 z-[160] flex animate-fade-in items-center justify-center overflow-hidden bg-black/95 p-4 sm:p-10"
       onClick={onClose}
       onTouchStart={(e) => {

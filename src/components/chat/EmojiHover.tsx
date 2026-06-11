@@ -7,7 +7,13 @@ import { COMPOSER_EMOJIS } from "./EmojiPicker";
 
 // Desktop-only emoji control that lives inside the input's right edge. Opens on
 // hover (no click), lets you pick several, and fades out when the cursor leaves.
-export function EmojiHover({ onPick }: { onPick: (emoji: string) => void }) {
+export function EmojiHover({
+  onPick,
+  align = "right",
+}: {
+  onPick: (emoji: string) => void;
+  align?: "left" | "right";
+}) {
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -31,7 +37,8 @@ export function EmojiHover({ onPick }: { onPick: (emoji: string) => void }) {
       </button>
       <div
         className={cn(
-          "chat-scroll absolute bottom-full right-0 mb-2 grid w-[15rem] origin-bottom-right grid-cols-8 gap-0.5 overflow-y-auto rounded-xl border border-bg-border bg-bg-soft p-2 shadow-xl transition-all duration-150",
+          "chat-scroll absolute bottom-full mb-2 grid w-[15rem] grid-cols-8 gap-0.5 overflow-y-auto rounded-xl border border-bg-border bg-bg-soft p-2 shadow-xl transition-all duration-150",
+          align === "left" ? "left-0 origin-bottom-left" : "right-0 origin-bottom-right",
           open ? "max-h-44 scale-100 opacity-100" : "pointer-events-none max-h-44 scale-95 opacity-0"
         )}
       >

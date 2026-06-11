@@ -12,7 +12,6 @@ import { ChatLightbox } from "@/components/chat/ChatLightbox";
 import { StagedStrip, type StagedFile } from "@/components/chat/StagedStrip";
 import { applyReactionToggle } from "@/components/chat/reactions";
 import { sanitizeChatBody } from "@/lib/chat-text";
-import { usePinToKeyboard } from "@/lib/usePinToKeyboard";
 import { useChatAttachmentSend } from "@/lib/useChatAttachmentSend";
 import { validateFile } from "@/lib/chat-media";
 import type { Reaction, Attachment } from "@/lib/chat-bus";
@@ -92,12 +91,28 @@ export function ChatWidget() {
   // visitor dismisses it (X) or opens the chat — both persist in localStorage.
   const [badgeShown, setBadgeShown] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // Sticky header that slides in from the top while the keyboard is up (the real
+  // header scrolls off, like Telegram).
+  const [stickyShow, setStickyShow] = useState(false);
+  // Keyboard up? When it is, the browser's bottom chrome is gone (the keyboard
+  // replaces it), so the big bottom inset must collapse to a small one.
+  const [kbUp, setKbUp] = useState(false);
+  // Bottom inset for the composer depends on the browser's bottom chrome, which
+  // overlaps the content differently: Chrome iOS has a tall bottom nav bar,
+  // Safari a shorter URL bar, everything else (Firefox, Android) reports the
+  // visible height correctly and needs almost nothing.
+  const [bottomPad, setBottomPad] = useState("pb-3");
+  // Bottom inset while the keyboard is UP (browser chrome is gone, but Safari
+  // still tucks a small URL pill above the keyboard, so it needs a bit more).
+  const [kbUpPad, setKbUpPad] = useState("pb-3");
+  // Firefox renders the chat fine without the sticky header — skip it there.
+  const [isFirefox, setIsFirefox] = useState(false);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  // On mobile the chat is a normal-flow app-shell (page hidden, no fixed) — pass
-  // appShell so the keyboard hook only resizes height (no Safari workarounds).
-  usePinToKeyboard(panelRef, scrollRef, panelRender, 639, isMobile);
+  // No visualViewport keyboard handling on mobile — the app-shell lock below
+  // (Telegram-Web recipe) + native Safari is what makes it smooth.
   const lastTypingSent = useRef(0);
   const typingHide = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Used ONLY inside event handlers (never inside a setState updater) to dedup
@@ -244,6 +259,15 @@ export function ChatWidget() {
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 639);
     check();
+    const ua = navigator.userAgent;
+    const crios = /crios/i.test(ua);
+    const firefox = /fxios|firefox/i.test(ua);
+    const safari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
+    setBottomPad(crios ? "pb-32" : safari ? "pb-12" : "pb-3");
+    // Keyboard-up inset: Safari needs a chunk (URL pill), Chrome iOS a moderate
+    // lift to clear the keyboard, everyone else almost nothing.
+    setKbUpPad(safari ? "pb-12" : crios ? "pb-[7.5rem]" : "pb-3");
+    setIsFirefox(firefox);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
@@ -259,6 +283,9 @@ export function ChatWidget() {
     const page = document.getElementById("pf-page");
     const html = document.documentElement;
     const body = document.body;
+    const isIOS =
+      /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const save = (el: HTMLElement) => ({
       position: el.style.position,
       top: el.style.top,
@@ -267,28 +294,70 @@ export function ChatWidget() {
       width: el.style.width,
       height: el.style.height,
       overflow: el.style.overflow,
+      margin: el.style.margin,
     });
     const prevHtml = save(html);
     const prevBody = save(body);
     const prevPageDisplay = page?.style.display ?? "";
-    // Full Telegram-style document lock: <html> AND <body> pinned to the
-    // viewport (overflow:hidden alone does NOT stop Safari scrolling the page on
-    // focus). With the page hidden + the panel rendered as normal-flow content
-    // inside this fixed shell, Safari has nothing to scroll and the input has no
-    // position:fixed ancestor -> clean.
-    const lock = (el: HTMLElement) => {
-      el.style.position = "fixed";
-      el.style.top = "0";
-      el.style.left = "0";
-      el.style.right = "0";
-      el.style.width = "100%";
-      el.style.height = "100%";
-      el.style.overflow = "hidden";
+
+    // THE fix: size the document to window.visualViewport.height — the ONLY
+    // value that always equals the truly visible area (excludes BOTH the Safari
+    // bottom toolbar AND the keyboard). CSS svh/dvh misbehave under the
+    // position:fixed lock, which is why the composer kept hiding. We update only
+    // the HEIGHT (never position) on viewport events, batched in one rAF — that
+    // keeps it smooth while guaranteeing the composer sits in the visible area.
+    const vv = window.visualViewport;
+    let raf = 0;
+    const setH = () => {
+      const h = `${vv ? vv.height : window.innerHeight}px`;
+      html.style.height = h;
+      body.style.height = h;
+      // Pin the sticky header to the top of the visible viewport.
+      if (stickyHeaderRef.current) {
+        stickyHeaderRef.current.style.top = `${vv ? vv.offsetTop : 0}px`;
+      }
+    };
+    const onVV = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setH();
+      });
     };
     if (page) page.style.display = "none";
-    lock(html);
-    lock(body);
+    if (isIOS) html.style.position = "fixed";
+    html.style.top = "0";
+    html.style.left = "0";
+    html.style.right = "0";
+    html.style.width = "100%";
+    body.style.width = "100%";
+    html.style.margin = "0";
+    body.style.margin = "0";
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    // Stop iOS from rubber-band-dragging the whole page (header + input would
+    // move with it). Block touchmove everywhere EXCEPT inside the message list,
+    // which stays the only thing that scrolls — with its own contained springy
+    // bounce (.chat-scroll: overscroll-behavior: contain). The lightbox handles
+    // its own gestures, so let it through too.
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.target as Element | null;
+      if (t && t.closest(".chat-scroll, [data-chat-lightbox]")) return;
+      if (e.cancelable) e.preventDefault();
+    };
+    setH();
+    vv?.addEventListener("resize", onVV);
+    vv?.addEventListener("scroll", onVV);
+    window.addEventListener("resize", onVV);
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
+      if (raf) cancelAnimationFrame(raf);
+      vv?.removeEventListener("resize", onVV);
+      vv?.removeEventListener("scroll", onVV);
+      window.removeEventListener("resize", onVV);
+      document.removeEventListener("touchmove", onTouchMove);
       const restore = (el: HTMLElement, p: ReturnType<typeof save>) => {
         el.style.position = p.position;
         el.style.top = p.top;
@@ -297,11 +366,44 @@ export function ChatWidget() {
         el.style.width = p.width;
         el.style.height = p.height;
         el.style.overflow = p.overflow;
+        el.style.margin = p.margin;
+        el.style.overscrollBehavior = "";
       };
       if (page) page.style.display = prevPageDisplay;
       restore(html, prevHtml);
       restore(body, prevBody);
       window.scrollTo(0, scrollY);
+    };
+  }, [panelRender, isMobile]);
+
+  // Sticky header: when the composer is focused (keyboard up) the real header
+  // scrolls off, so after a short beat we slide in a compact sticky header from
+  // the top. On blur it slides back out.
+  useEffect(() => {
+    if (!panelRender || !isMobile) {
+      setStickyShow(false);
+      setKbUp(false);
+      return;
+    }
+    const panel = panelRef.current;
+    if (!panel) return;
+    let t: ReturnType<typeof setTimeout>;
+    const onFocusIn = () => {
+      setKbUp(true);
+      clearTimeout(t);
+      t = setTimeout(() => setStickyShow(true), 320);
+    };
+    const onFocusOut = () => {
+      setKbUp(false);
+      clearTimeout(t);
+      setStickyShow(false);
+    };
+    panel.addEventListener("focusin", onFocusIn);
+    panel.addEventListener("focusout", onFocusOut);
+    return () => {
+      clearTimeout(t);
+      panel.removeEventListener("focusin", onFocusIn);
+      panel.removeEventListener("focusout", onFocusOut);
     };
   }, [panelRender, isMobile]);
 
@@ -677,11 +779,11 @@ export function ChatWidget() {
         <div
           ref={panelRef}
           className={cn(
-            // Mobile: NORMAL-FLOW app-shell (not fixed) filling the viewport with
-            // the page hidden behind it — no position:fixed around the input, no
-            // scrollable background, so iOS Safari can't jump. Height is set
-            // imperatively by usePinToKeyboard to follow the keyboard.
-            "relative z-[95] flex h-[100dvh] w-full flex-col overflow-hidden bg-bg-soft",
+            // Mobile: NORMAL-FLOW app-shell (page hidden behind it) filling the
+            // locked document (height = window.innerHeight via the lock effect).
+            // h-full (NOT 100dvh, which shrinks with the keyboard) keeps it stable
+            // — Safari handles the keyboard natively, like Telegram Web.
+            "relative z-[95] flex h-full w-full flex-col overflow-hidden bg-bg-soft",
             // Desktop: floating fixed panel bottom-right.
             "sm:fixed sm:inset-auto sm:bottom-24 sm:right-[max(1.25rem,calc(50vw_-_36rem_-_0.75rem))] sm:h-[min(34rem,75vh)] sm:w-[min(24rem,calc(100vw-2.5rem))] sm:rounded-2xl sm:border sm:border-bg-border sm:shadow-2xl",
             // Only the open/close genie animates. height/top are tracked per
@@ -722,7 +824,7 @@ export function ChatWidget() {
           <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={scrollRef} onScroll={onMessagesScroll} className="chat-scroll flex-1 overflow-y-auto p-4">
             {/* min-h-full + justify-end pins messages to the bottom like a messenger */}
-            <div className="flex min-h-full flex-col justify-end space-y-2">
+            <div className="flex min-h-[calc(100%+1px)] flex-col justify-end space-y-2">
             {messages.length === 0 ? (
               <p className="text-center text-sm text-fg-faint">
                 Напишите сообщение — отвечу здесь же.
@@ -785,53 +887,62 @@ export function ChatWidget() {
           ) : null}
           </div>
 
-          <div className="border-t border-bg-border p-3">
+          <div className={cn("border-t border-bg-border px-2.5 pt-2 sm:pb-3", kbUp ? kbUpPad : bottomPad)}>
             {mediaError ? (
               <p className="mb-2 rounded-md bg-red-500/15 px-2 py-1 text-xs text-red-300">{mediaError}</p>
             ) : null}
             {reply ? <ReplyBar body={reply.body} onCancel={() => setReply(null)} /> : null}
             <StagedStrip files={staged} onRemove={removeStaged} />
             {!identified ? (
-              <div className="mb-2 grid grid-cols-2 gap-2">
+              // Mobile: rounded fields matching the message input. Desktop:
+              // underline-only (border-bottom) fields.
+              <div className="mb-2 grid grid-cols-2 gap-2 sm:gap-5">
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Имя (необязательно)"
-                  className="rounded-md border border-bg-border bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-accent"
+                  placeholder="Имя"
+                  className="rounded-xl border border-bg-border bg-bg px-3.5 py-2.5 text-sm text-fg outline-none transition placeholder:text-fg-faint focus:border-accent sm:rounded-none sm:border-0 sm:border-b sm:border-bg-border sm:bg-transparent sm:px-1 sm:py-1.5 sm:focus:border-accent"
                 />
                 <input
                   value={contact}
                   onChange={(e) => setContact(e.target.value)}
-                  placeholder="Контакт (необязательно)"
-                  className="rounded-md border border-bg-border bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-accent"
+                  placeholder="Контакт"
+                  className="rounded-xl border border-bg-border bg-bg px-3.5 py-2.5 text-sm text-fg outline-none transition placeholder:text-fg-faint focus:border-accent sm:rounded-none sm:border-0 sm:border-b sm:border-bg-border sm:bg-transparent sm:px-1 sm:py-1.5 sm:focus:border-accent"
                 />
               </div>
             ) : null}
-            <div className="flex items-end gap-1.5">
-              <AttachButton onFiles={stageFiles} />
-              <div className="relative flex flex-1 items-end">
+            {/* Mobile: lightly-rounded pill (text · attach). Desktop: flat bar
+                with a full-width bottom border (emoji · text · attach). Buttons
+                vertically centered; attach (plus) always on the right. */}
+            <div className="flex items-center gap-2">
+              <div className="flex flex-1 items-center rounded-xl border border-bg-border bg-bg transition-colors sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b sm:bg-transparent sm:focus-within:border-accent">
+                <div className="hidden shrink-0 sm:block">
+                  <EmojiHover align="left" onPick={(e) => setInput((prev) => prev + e)} />
+                </div>
                 <AutoTextarea
                   value={input}
                   onChange={onInputChange}
                   onSubmit={onSend}
                   inputRef={composerRef}
-                  placeholder="Сообщение…"
-                  className="w-full rounded-lg border border-bg-border bg-bg py-2 pl-3 pr-10 text-sm text-fg outline-none focus:border-accent"
+                  placeholder="Сообщение"
+                  className="flex-1 resize-none bg-transparent py-2.5 pl-3.5 pr-1.5 text-sm text-fg outline-none placeholder:text-fg-faint sm:pl-1.5"
                 />
-                <div className="absolute bottom-1.5 right-1.5">
-                  <EmojiHover onPick={(e) => setInput((prev) => prev + e)} />
+                <div className="shrink-0">
+                  <AttachButton align="right" onFiles={stageFiles} />
                 </div>
               </div>
-              <button
-                onClick={onSend}
-                // Keep the keyboard open: don't let the button steal focus.
-                onMouseDown={(e) => e.preventDefault()}
-                disabled={sending || (staged.length === 0 && !sanitizeChatBody(input))}
-                aria-label="Отправить"
-                className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg bg-accent text-white disabled:opacity-50"
-              >
-                <Send size={16} />
-              </button>
+              {staged.length > 0 || sanitizeChatBody(input) ? (
+                <button
+                  onClick={onSend}
+                  // Keep the keyboard open: don't let the button steal focus.
+                  onMouseDown={(e) => e.preventDefault()}
+                  disabled={sending}
+                  aria-label="Отправить"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white shadow-sm transition active:scale-95 disabled:opacity-50"
+                >
+                  <Send size={18} />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -839,6 +950,37 @@ export function ChatWidget() {
           {lightbox ? (
             <ChatLightbox images={lightbox.images} index={lightbox.index} onClose={() => setLightbox(null)} />
           ) : null}
+        </div>
+      ) : null}
+
+      {/* Sticky header (mobile, keyboard up). Outer element is fixed and pinned
+          to the visible-viewport top (top set imperatively); the inner element
+          does the slide/fade so we never put a transform on a fixed element. */}
+      {panelRender && isMobile && !isFirefox ? (
+        <div
+          ref={stickyHeaderRef}
+          className="pointer-events-none fixed left-0 right-0 z-[96] overflow-hidden"
+          style={{ top: 0 }}
+        >
+          <div
+            className={cn(
+              "flex items-center justify-between border-b border-bg-border bg-bg-soft/95 px-4 py-3 backdrop-blur transition-all duration-300 ease-out",
+              stickyShow ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none -translate-y-full opacity-0"
+            )}
+          >
+            <div>
+              <p className="text-sm font-semibold text-fg">Чат</p>
+              <p className="text-xs text-fg-faint">Обычно отвечаю быстро</p>
+            </div>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setOpen(false)}
+              aria-label="Свернуть чат"
+              className="rounded p-1.5 text-fg-faint hover:text-fg"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
       ) : null}
 

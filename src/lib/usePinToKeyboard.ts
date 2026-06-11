@@ -105,9 +105,37 @@ export function usePinToKeyboard(
       if (!isMobile()) {
         panel.style.height = "";
         panel.style.top = "";
+        panel.style.paddingBottom = "";
         document.body.style.height = "";
         prevH = 0;
         anchorBottom = null;
+        return;
+      }
+
+      // App-shell: the panel fills the full (locked) viewport and NEVER moves —
+      // the header stays rock-solid at the top. Only the bottom padding grows to
+      // the keyboard height, which lifts the composer above the keyboard while
+      // the messages area (flex-1) shrinks between them. No `top`, no resize of
+      // the whole panel -> the header can't drift.
+      if (appShell) {
+        // Keyboard overlap. Only while focused: Safari minimises its (bottom)
+        // URL bar then, so innerHeight - vv.height is the keyboard alone; when
+        // not focused that delta would be the URL bar, so force 0.
+        const kb = focused
+          ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+          : 0;
+        const changed = Math.abs(kb - prevH) > 1;
+        if (changed && anchorBottom === null) anchorBottom = captureAnchor();
+        panel.style.top = "0px";
+        panel.style.height = `${window.innerHeight}px`;
+        panel.style.paddingBottom = `${kb}px`;
+        if (changed && sc && anchorBottom !== null) {
+          const msgH = sc.clientHeight; // messages height after the padding
+          const max = Math.max(0, contentH - msgH);
+          sc.scrollTop = Math.min(Math.max(0, anchorBottom - msgH), max);
+        }
+        if (changed) releaseAnchorSoon();
+        prevH = kb;
         return;
       }
 
@@ -225,6 +253,7 @@ export function usePinToKeyboard(
       panel.removeEventListener("focusout", onFocusOut);
       panel.style.height = "";
       panel.style.top = "";
+      panel.style.paddingBottom = "";
       document.body.style.height = "";
     };
   }, [active, maxWidth, panelRef, scrollRef, appShell]);

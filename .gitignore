@@ -24,3 +24,6 @@ docker-compose.override.yml
 # AI assistant
 CLAUDE.md
 .claude/
+
+# Telegram Web source — только для ресёрча, НЕ коммитить
+src-from-tweb/
