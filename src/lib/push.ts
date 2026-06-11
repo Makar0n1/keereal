@@ -20,6 +20,9 @@ export interface PushPayload {
   body: string;
   url?: string;
   tag?: string;
+  // Thread the message belongs to — the SW uses it to decide whether the admin
+  // is already looking at this conversation (and to deep-link on click).
+  threadId?: string;
 }
 
 // Fire a push to every stored admin subscription. Best-effort: dead endpoints

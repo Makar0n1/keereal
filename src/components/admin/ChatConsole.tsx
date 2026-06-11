@@ -18,7 +18,7 @@ import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { usePinToKeyboard } from "@/lib/usePinToKeyboard";
 import { useChatAttachmentSend } from "@/lib/useChatAttachmentSend";
 import { validateFile } from "@/lib/chat-media";
-import { Bell, BellOff, ArrowLeft, X, Inbox, Send, ChevronDown } from "lucide-react";
+import { ArrowLeft, X, Inbox, Send, ChevronDown } from "lucide-react";
 import type { ChatEvent, Reaction, Attachment } from "@/lib/chat-bus";
 
 type ConvMessage = ChatMsg;
@@ -38,7 +38,7 @@ interface LinkedLead {
 }
 
 export function ChatConsole() {
-  const { threads, activeId, setActiveId, markThreadRead, subscribe, soundOn, toggleSound, unreadTotal } =
+  const { threads, activeId, setActiveId, markThreadRead, subscribe, unreadTotal } =
     useAdminChat();
 
   const [messages, setMessages] = useState<ConvMessage[]>([]);
@@ -93,11 +93,16 @@ export function ChatConsole() {
     setActiveId(id);
     markThreadRead(id);
     loadThread(id);
+    // Reflect the open thread in the URL so (a) the service worker can tell
+    // which conversation is on screen and suppress its push, and (b) a push
+    // deep-link (/admin/chat?t=<id>) opens this exact thread.
+    window.history.replaceState(null, "", `/admin/chat?t=${id}`);
   }
 
   function closeThread() {
     setActiveId(null);
     setTheyTyping(false);
+    window.history.replaceState(null, "", "/admin/chat");
     // Keep the content while the panel slides out, then clear.
     if (clearTimer.current) clearTimeout(clearTimer.current);
     clearTimer.current = setTimeout(() => {
@@ -113,6 +118,14 @@ export function ChatConsole() {
   useEffect(() => {
     return () => setActiveId(null);
   }, [setActiveId]);
+
+  // Deep-link from a push notification: open the thread named in ?t=<id> on
+  // first load. Runs once on mount.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("t");
+    if (t) openThread(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Realtime events for the active thread: messages, read receipts, typing.
   useEffect(() => {
@@ -372,13 +385,6 @@ export function ChatConsole() {
       <div className="flex h-full flex-col overflow-hidden rounded-xl border border-bg-border bg-bg-soft">
         <div className="flex items-center justify-between border-b border-bg-border px-4 py-3">
           <span className="text-sm font-semibold text-fg">Диалоги</span>
-          <button
-            onClick={toggleSound}
-            title={soundOn ? "Звук включён" : "Звук выключен"}
-            className={cn("p-1", soundOn ? "text-accent" : "text-fg-faint hover:text-fg")}
-          >
-            {soundOn ? <Bell size={18} /> : <BellOff size={18} />}
-          </button>
         </div>
         <div className="chat-scroll flex-1 overflow-y-auto">
           {threads.length === 0 ? (

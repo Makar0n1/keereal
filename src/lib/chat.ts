@@ -174,6 +174,8 @@ export async function postVisitorMessage(
       title: v?.name ? `💬 ${v.name}` : "💬 Новое сообщение",
       body: preview.slice(0, 140),
       tag: `thread-${thread.id}`,
+      threadId: thread.id,
+      url: `/admin/chat?t=${thread.id}`,
     });
   })().catch(() => {});
 

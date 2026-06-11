@@ -31,8 +31,6 @@ interface Ctx {
   reload: () => Promise<void>;
   subscribe: (fn: (evt: ChatEvent) => void) => () => void;
   markThreadRead: (threadId: string) => void;
-  soundOn: boolean;
-  toggleSound: () => void;
 }
 
 const ChatCtx = createContext<Ctx | null>(null);
@@ -43,37 +41,12 @@ export function useAdminChat() {
   return ctx;
 }
 
-function useBeep() {
-  const ref = useRef<AudioContext | null>(null);
-  return useCallback(() => {
-    try {
-      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      ref.current = ref.current ?? new Ctor();
-      const ctx = ref.current;
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.frequency.value = 760;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
-      o.start();
-      o.stop(ctx.currentTime + 0.31);
-    } catch {
-      /* blocked */
-    }
-  }, []);
-}
-
 export function AdminChatProvider({ children }: { children: React.ReactNode }) {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [soundOn, setSoundOn] = useState(false);
   const listeners = useRef<Set<(evt: ChatEvent) => void>>(new Set());
   const activeRef = useRef<string | null>(null);
   activeRef.current = activeId;
-  const beep = useBeep();
 
   const unreadTotal = useMemo(() => threads.reduce((sum, t) => sum + t.unread, 0), [threads]);
 
@@ -101,9 +74,8 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, []);
 
-  // Load preferences + initial threads.
+  // Load initial threads.
   useEffect(() => {
-    setSoundOn(localStorage.getItem("pf_admin_sound") === "1");
     reload();
   }, [reload]);
 
@@ -143,22 +115,15 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
           const next = [updated, ...prev.filter((_, i) => i !== idx)];
           return next;
         });
-
-        // Ping on every incoming message unless we're actively looking at that
-        // thread with the tab focused.
-        const activelyViewing = activeRef.current === evt.threadId && !document.hidden;
-        if (m.sender === "VISITOR" && !activelyViewing) {
-          if (localStorage.getItem("pf_admin_sound") === "1") beep();
-          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            new Notification("Новое сообщение в чате", { body: m.body.slice(0, 120) });
-          }
-        }
+        // Alerting (sound / OS notification) is handled by the Web Push service
+        // worker now — see public/sw.js. Here we only keep the list in sync
+        // (bump the thread to the top + unread count above).
       } else if (evt.kind === "read" && evt.by === "ADMIN") {
         setThreads((prev) => prev.map((t) => (t.id === evt.threadId ? { ...t, unread: 0 } : t)));
       }
     };
     return () => es.close();
-  }, [beep, reload]);
+  }, [reload]);
 
   // Tab-title blink while there are unread chat messages and the tab is hidden.
   useEffect(() => {
@@ -181,20 +146,6 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
     };
   }, [unreadTotal]);
 
-  const toggleSound = useCallback(() => {
-    setSoundOn((prev) => {
-      const next = !prev;
-      localStorage.setItem("pf_admin_sound", next ? "1" : "0");
-      if (next) {
-        beep();
-        if (typeof Notification !== "undefined" && Notification.permission === "default") {
-          Notification.requestPermission().catch(() => {});
-        }
-      }
-      return next;
-    });
-  }, [beep]);
-
   const value: Ctx = {
     threads,
     unreadTotal,
@@ -203,8 +154,6 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
     reload,
     subscribe,
     markThreadRead,
-    soundOn,
-    toggleSound,
   };
 
   return <ChatCtx.Provider value={value}>{children}</ChatCtx.Provider>;
