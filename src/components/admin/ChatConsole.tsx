@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAdminChat } from "./AdminChatProvider";
 import { StatusBadge } from "./ui";
 import { cn, formatDate } from "@/lib/utils";
@@ -61,11 +62,12 @@ export function ChatConsole() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
   // New app-shell keyboard handling (same as the guest chat; see CLAUDE.md §6.5e).
-  const { isMobile, bottomPad, kbUpPad, kbUp, stickyShow, isFirefox } = useChatAppShell(
+  const { isMobile, bottomPad, kbUpPad, kbUp } = useChatAppShell(
     activeId !== null,
     paneRef,
     stickyHeaderRef,
-    1023
+    1023,
+    "admin-shell"
   );
   const ids = useRef<Set<string>>(new Set());
   const lastTypingSent = useRef(0);
@@ -428,20 +430,16 @@ export function ChatConsole() {
         </div>
       </div>
 
-      {/* Conversation — on mobile a fullscreen messenger screen (slides in from
-          the right, covers the admin bar); on desktop a static grid column. */}
-      <div
-        ref={paneRef}
-        className={cn(
-          // Mobile: fullscreen; height/top tracked imperatively per frame (must
-          // be instant). When OPEN -> transform: none (iOS Safari: transform on a
-          // fixed element breaks fixing -> flies up on focus). Only the closed
-          // state uses translate-x for the slide-in.
-          "fixed left-0 top-0 z-[60] flex h-[100dvh] w-full flex-col overflow-hidden bg-bg-soft transition-transform duration-200 ease-out",
-          "lg:relative lg:top-auto lg:z-auto lg:h-full lg:w-auto lg:rounded-xl lg:border lg:border-bg-border lg:transition-none",
-          activeId ? "" : "translate-x-full lg:translate-x-0"
-        )}
-      >
+      {/* Conversation. Desktop: a static grid column. Mobile: app-shell — a
+          NORMAL-FLOW pane portaled to <body> while the admin shell (#admin-shell)
+          is hidden by the hook, so iOS has no scrollable background / fixed input
+          (the only thing that fully kills the keyboard jump + offsetTop jitter). */}
+      {(() => {
+        const pane = (
+          <div
+            ref={paneRef}
+            className="relative flex h-full w-full flex-col overflow-hidden bg-bg-soft lg:rounded-xl lg:border lg:border-bg-border"
+          >
         {!activeId && !visitor ? (
           <div className="hidden flex-1 items-center justify-center text-fg-faint lg:flex">
             Выберите диалог слева
@@ -617,45 +615,20 @@ export function ChatConsole() {
         {lightbox ? (
           <ChatLightbox images={lightbox.images} index={lightbox.index} onClose={() => setLightbox(null)} />
         ) : null}
-      </div>
-
-      {/* Sticky header (mobile, keyboard up): the real header scrolls off, so a
-          compact back + name bar slides in from the visible-viewport top. */}
-      {activeId && isMobile && !isFirefox ? (
-        <div
-          ref={stickyHeaderRef}
-          className="pointer-events-none fixed left-0 right-0 z-[61] overflow-hidden"
-          style={{ top: 0 }}
-        >
-          <div
-            className={cn(
-              "flex items-center gap-2 border-b border-bg-border bg-bg-soft/95 px-3 py-3 backdrop-blur transition-all duration-300 ease-out",
-              stickyShow
-                ? "pointer-events-auto translate-y-0 opacity-100"
-                : "pointer-events-none -translate-y-full opacity-0"
-            )}
-          >
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={closeThread}
-              aria-label="Назад"
-              className="-ml-1 flex shrink-0 items-center rounded-md px-1.5 py-1 text-fg-muted transition hover:text-fg"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <p className="min-w-0 truncate text-sm font-semibold text-fg">
-              {visitor?.name || "Гость"}
-            </p>
           </div>
-        </div>
-      ) : null}
+        );
+        // Mobile: portal the (normal-flow) pane out of the hidden #admin-shell to
+        // <body> while a thread is open; otherwise the thread list shows.
+        return isMobile ? (activeId ? createPortal(pane, document.body) : null) : pane;
+      })()}
 
-      {/* Focus overlay — outside the transformed pane (viewport-fixed). */}
+      {/* Focus overlay (viewport-fixed). On mobile portal it to <body> too —
+          it would otherwise live inside the hidden #admin-shell. */}
       {ctx
         ? (() => {
             const msg = messages.find((m) => m.id === ctx.id);
             if (!msg) return null;
-            return (
+            const overlay = (
               <MessageOverlay
                 message={msg}
                 mySide="ADMIN"
@@ -674,6 +647,7 @@ export function ChatConsole() {
                 }}
               />
             );
+            return isMobile ? createPortal(overlay, document.body) : overlay;
           })()
         : null}
     </div>

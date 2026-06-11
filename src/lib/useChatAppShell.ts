@@ -18,7 +18,8 @@ export function useChatAppShell(
   active: boolean,
   paneRef: RefObject<HTMLElement | null>,
   stickyHeaderRef: RefObject<HTMLElement | null>,
-  maxWidth = 639
+  maxWidth = 639,
+  pageHideId?: string
 ) {
   const [isMobile, setIsMobile] = useState(false);
   const [bottomPad, setBottomPad] = useState("pb-3");
@@ -35,8 +36,8 @@ export function useChatAppShell(
     const crios = /crios/i.test(ua);
     const firefox = /fxios|firefox/i.test(ua);
     const safari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
-    setBottomPad(crios ? "pb-32" : safari ? "pb-12" : "pb-3");
-    setKbUpPad(safari ? "pb-12" : crios ? "pb-[7.5rem]" : "pb-3");
+    setBottomPad(crios ? "pb-5" : "pb-3");
+    setKbUpPad(safari ? "pb-6" : crios ? "pb-[1.875rem]" : "pb-3");
     setIsFirefox(firefox);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
@@ -64,16 +65,29 @@ export function useChatAppShell(
     });
     const prevHtml = save(html);
     const prevBody = save(body);
+    // Hide the background so there's nothing for iOS to scroll on focus —
+    // keeps visualViewport.offsetTop at 0 (no jitter). The pane must be portaled
+    // OUT of this element by the caller, or it'd be hidden too.
+    const page = pageHideId ? document.getElementById(pageHideId) : null;
+    const prevPageDisplay = page?.style.display ?? "";
 
     const vv = window.visualViewport;
     let raf = 0;
     const setH = () => {
       const h = `${vv ? vv.height : window.innerHeight}px`;
+      const offTop = `${vv ? vv.offsetTop : 0}px`;
       html.style.height = h;
       body.style.height = h;
-      if (pane) pane.style.height = h;
+      if (pane) {
+        pane.style.height = h;
+        // The pane is a position:fixed overlay (admin) — fixed elements don't
+        // follow the visual-viewport offset on iOS, so when the keyboard opens
+        // the composer "flies up". Track offsetTop so the pane stays glued to
+        // the visible area. (Guest panel is normal-flow and doesn't need this.)
+        pane.style.top = offTop;
+      }
       if (stickyHeaderRef.current) {
-        stickyHeaderRef.current.style.top = `${vv ? vv.offsetTop : 0}px`;
+        stickyHeaderRef.current.style.top = offTop;
       }
     };
     const onVV = () => {
@@ -83,6 +97,7 @@ export function useChatAppShell(
         setH();
       });
     };
+    if (page) page.style.display = "none";
     if (isIOS) html.style.position = "fixed";
     html.style.top = "0";
     html.style.left = "0";
@@ -124,10 +139,14 @@ export function useChatAppShell(
       };
       restore(html, prevHtml);
       restore(body, prevBody);
-      if (pane) pane.style.height = "";
+      if (page) page.style.display = prevPageDisplay;
+      if (pane) {
+        pane.style.height = "";
+        pane.style.top = "";
+      }
       window.scrollTo(0, scrollY);
     };
-  }, [active, isMobile, paneRef, stickyHeaderRef]);
+  }, [active, isMobile, paneRef, stickyHeaderRef, pageHideId]);
 
   // Keyboard up? (focus tracking) + delayed sticky-header reveal.
   useEffect(() => {

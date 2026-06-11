@@ -19,7 +19,7 @@ export default async function PanelLayout({
 
   return (
     <AdminChatProvider>
-      <div className="min-h-screen bg-bg text-fg">
+      <div id="admin-shell" className="min-h-screen bg-bg text-fg">
         {/* Mobile top bar */}
         <AdminMobileNav email={user.email} newLeads={newLeads} />
 
