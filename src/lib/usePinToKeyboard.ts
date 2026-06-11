@@ -2,16 +2,20 @@
 
 import { useEffect, type RefObject } from "react";
 
-// Only REAL Safari (desktop, iOS, iPadOS) needs the workaround — its
-// visualViewport events are sparse/late. iOS Chrome (CriOS) and iOS Firefox
-// (FxiOS), though WebKit under the hood, report events fine and must use the
-// smooth event path, so they're excluded here.
-function isWebKit(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  return /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
-}
-
+// Keyboard handling, Telegram-Web style.
+//
+// The document is locked (see useBodyScrollLock: html/body fixed, overflow
+// hidden) and here we ONLY resize HEIGHT to the visual viewport. `top` follows
+// visualViewport.offsetTop but is SNAPPED — never eased. The earlier Safari
+// workaround eased `top` to hide its jittery offsetTop settle, and THAT easing
+// was the visible "slow drift up". Telegram avoids the whole problem: with the
+// body locked + sized to the visual viewport, the focused input stays above the
+// keyboard, so iOS has nothing to scroll and offsetTop stays ~0 — no drift, no
+// jitter. One code path for Blink / Gecko / WebKit.
+//
+// The only engine-specific concession: Safari fires visualViewport events
+// sparsely during the keyboard animation, so on focus transitions we also poll
+// for a short window (rAF) to follow the animation frame-by-frame.
 export function usePinToKeyboard(
   panelRef: RefObject<HTMLElement | null>,
   scrollRef: RefObject<HTMLElement | null>,
@@ -24,8 +28,8 @@ export function usePinToKeyboard(
     const panel = panelRef.current;
     if (!vv || !panel) return;
 
-    const webkit = isWebKit();
     const now = () => performance.now();
+    const isMobile = () => window.innerWidth <= maxWidth;
 
     let prevH = 0;
     let anchorBottom: number | null = null;
@@ -34,23 +38,12 @@ export function usePinToKeyboard(
     let release: ReturnType<typeof setTimeout> | null = null;
     let raf = 0;
     let looping = false;
-    let busyUntil = 0;
-    let focused = false;
-    let baseH = 0; // full visible height (no keyboard)
-    let closing = false;
-    let preShrink = false; // hold the input high so Safari never scrolls
-    let curTop = vv.offsetTop; // eased `top` for Safari (filters the jitter)
-    const SMOOTH = 0.1; // lower = slower/smoother follow of offsetTop on Safari
+    let loopUntil = 0;
 
-    const isMobile = () => window.innerWidth <= maxWidth;
-
-    // Hard-pin document scroll to 0 (snap to zero instantly, no slow settle).
-    const killScroll = () => {
-      if (window.scrollY !== 0) window.scrollTo(0, 0);
-      const de = document.scrollingElement as HTMLElement | null;
-      if (de && de.scrollTop !== 0) de.scrollTop = 0;
-    };
-
+    // Bottom edge (in content coords) of the lowest message currently visible —
+    // we keep it pinned to the bottom of the list across a height change, so the
+    // message you were reading rises just above the keyboard (and doesn't get
+    // "eaten"). Coords are content-relative, stable across the resize.
     const captureAnchor = (): number | null => {
       const sc = scrollRef.current;
       if (!sc) return null;
@@ -77,130 +70,85 @@ export function usePinToKeyboard(
       if (!isMobile()) {
         panel.style.height = "";
         panel.style.top = "";
+        document.body.style.height = "";
         prevH = 0;
         anchorBottom = null;
         return;
       }
-      if (webkit && focused) killScroll(); // pin doc scroll to 0
-      let h = vv.height;
-      // During close: stay at full height immediately (Safari reports the growth
-      // late) -> instant restore, no "thoughtful" expand.
-      if (closing) {
-        h = Math.max(h, baseH);
-        if (vv.height >= baseH - 40) closing = false;
-      } else if (preShrink) {
-        // Hold the panel short (input high above the keyboard) so Safari has no
-        // reason to scroll the visual viewport -> offsetTop stays 0, no journey.
-        if (baseH - vv.height > 80) {
-          preShrink = false; // keyboard height now known -> fit to it
-          h = vv.height;
-        } else {
-          h = Math.round(baseH * 0.5);
-        }
-      }
-      const top = vv.offsetTop;
-      // Safari: ease toward offsetTop so its jittery 290->59 settle becomes a
-      // smooth, almost-invisible drift (the dark backdrop hides any edge gap).
-      // Other engines are already smooth -> snap instantly.
-      if (webkit) {
-        const d = top - curTop;
-        curTop = Math.abs(d) < 0.5 ? top : curTop + d * SMOOTH;
-        if (Math.abs(top - curTop) > 0.5) busyUntil = Math.max(busyUntil, now() + 150);
-      } else {
-        curTop = top;
-      }
+
+      const h = vv.height;
+      const top = vv.offsetTop; // SNAPPED — no easing, so no slow drift.
       const changed = Math.abs(h - prevH) > 1;
       if (changed && anchorBottom === null) anchorBottom = captureAnchor();
 
+      // Telegram-style: the locked document body conforms to the visual viewport
+      // and the panel fills it. Only the height ever animates; top is ~0.
+      document.body.style.height = `${h}px`;
       panel.style.height = `${h}px`;
-      panel.style.top = `${curTop}px`;
+      panel.style.top = `${top}px`;
+
       if (changed && sc && anchorBottom !== null) {
         const msgH = Math.max(0, h - chromeH);
         const max = Math.max(0, contentH - msgH);
         sc.scrollTop = Math.min(Math.max(0, anchorBottom - msgH), max);
       }
-      if (changed) {
-        busyUntil = now() + 450;
-        releaseAnchorSoon();
-      }
+      if (changed) releaseAnchorSoon();
       prevH = h;
     };
 
+    // Short rAF pump to follow the keyboard animation on engines that don't emit
+    // continuous viewport events (Safari). Self-stops when the window elapses.
     const loop = () => {
       apply();
-      if (focused || closing || now() < busyUntil) requestAnimationFrame(loop);
+      if (now() < loopUntil) requestAnimationFrame(loop);
       else looping = false;
     };
-    const startLoop = () => {
+    const pump = (ms: number) => {
+      loopUntil = Math.max(loopUntil, now() + ms);
       if (!looping) {
         looping = true;
         requestAnimationFrame(loop);
       }
     };
 
+    // Blink/Gecko: continuous viewport events -> one rAF-batched apply per frame.
     const onEvent = () => {
-      if (webkit) startLoop();
-      else if (!raf) {
+      if (!raf) {
         raf = requestAnimationFrame(() => {
           raf = 0;
           apply();
         });
       }
     };
-
-    // Reactive scroll guard (only when the keyboard is up).
-    const onScroll = () => {
-      if (webkit && focused) killScroll();
-    };
-
     const onFocusIn = () => {
       if (!isMobile()) return;
       anchorBottom = captureAnchor();
-      if (webkit) {
-        baseH = vv.height;
-        focused = true;
-        closing = false;
-        preShrink = true;
-        killScroll();
-        apply(); // shrink synchronously, before Safari decides to scroll
-        startLoop();
-      }
+      pump(900); // cover the keyboard open animation
     };
-
     const onFocusOut = () => {
-      if (!webkit) return;
-      focused = false;
-      closing = true;
-      preShrink = false;
+      if (!isMobile()) return;
       anchorBottom = captureAnchor();
-      busyUntil = now() + 1200;
-      apply(); // sets full height right now -> instant restore
-      startLoop();
+      pump(700); // cover the keyboard close animation
     };
 
     apply();
     vv.addEventListener("resize", onEvent);
     vv.addEventListener("scroll", onEvent);
     window.addEventListener("resize", onEvent);
-    window.addEventListener("scroll", onScroll, true);
-    document.addEventListener("scroll", onScroll, true);
     panel.addEventListener("focusin", onFocusIn);
     panel.addEventListener("focusout", onFocusOut);
     return () => {
-      focused = false;
-      closing = false;
-      busyUntil = 0;
       if (raf) cancelAnimationFrame(raf);
       if (release) clearTimeout(release);
+      loopUntil = 0;
       vv.removeEventListener("resize", onEvent);
       vv.removeEventListener("scroll", onEvent);
       window.removeEventListener("resize", onEvent);
-      window.removeEventListener("scroll", onScroll, true);
-      document.removeEventListener("scroll", onScroll, true);
       panel.removeEventListener("focusin", onFocusIn);
       panel.removeEventListener("focusout", onFocusOut);
       panel.style.height = "";
       panel.style.top = "";
+      document.body.style.height = "";
     };
   }, [active, maxWidth, panelRef, scrollRef]);
 }
