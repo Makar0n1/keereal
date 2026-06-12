@@ -217,6 +217,8 @@ export function ChatMessage({
   const bubbleRef = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressH = useRef(0); // bubble height captured when the press-scale kicks in
   const lastTap = useRef(0);
   const moved = useRef(false);
   const touchedAt = useRef(0); // suppress the touch-synthesized dblclick
@@ -277,6 +279,10 @@ export function ChatMessage({
       clearTimeout(longPress.current);
       longPress.current = null;
     }
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
   }
 
   function onTouchStart(e: React.TouchEvent) {
@@ -285,13 +291,19 @@ export function ChatMessage({
     const t = e.touches[0]!;
     start.current = { x: t.clientX, y: t.clientY, t: Date.now() };
     moved.current = false;
-    setPressing(true);
     clearLong();
+    // Press-scale only kicks in after a deliberate 250ms hold (NOT instantly on
+    // touch — that flashed on every tap/scroll start). The magnitude shrinks for
+    // tall bubbles (see pressScale) so a big message grows as gently as a small one.
+    pressTimer.current = setTimeout(() => {
+      pressH.current = bubbleRef.current?.offsetHeight ?? 0;
+      setPressing(true);
+    }, 250);
     longPress.current = setTimeout(() => {
       setPressing(false);
       navigator.vibrate?.(12);
       openContext(true);
-    }, 280);
+    }, 430);
   }
 
   function onTouchMove(e: React.TouchEvent) {
@@ -368,8 +380,15 @@ export function ChatMessage({
       onTouchEnd={onTouchEnd}
     >
       <div
-        style={{ transform: `translateX(${swipe}px) scale(${pressing ? 1.03 : 1})` }}
-        className="max-w-[80%] transition-transform duration-150"
+        style={{
+          // Grow by a near-constant ~8px regardless of bubble height, so a tall
+          // message scales as subtly as a short one (plain 1.03 made big bubbles
+          // lurch). transition eased over 200ms for a soft, non-abrupt feel.
+          transform: `translateX(${swipe}px) scale(${
+            pressing ? 1 + Math.min(0.03, 8 / Math.max(pressH.current, 80)) : 1
+          })`,
+        }}
+        className="max-w-[80%] transition-transform duration-200 ease-out"
       >
         <Bubble
           message={m}

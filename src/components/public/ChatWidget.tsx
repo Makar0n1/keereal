@@ -307,14 +307,60 @@ export function ChatWidget() {
     // the HEIGHT (never position) on viewport events, batched in one rAF — that
     // keeps it smooth while guaranteeing the composer sits in the visible area.
     const vv = window.visualViewport;
+    let prevH = vv ? vv.height : window.innerHeight;
+    let prevOffTop = vv ? vv.offsetTop : 0;
+    // The content right above the input must stay above the input through EVERY
+    // keyboard open/close — like Telegram. We hold the distance from the bottom
+    // (scrollHeight - scrollTop - clientHeight) constant during a transition: the
+    // content at the list's bottom edge is then always the same line, so it never
+    // drifts toward the top. `distFromBottom` is captured on focusin/focusout (the
+    // reliable open/close triggers) and kept fresh on every manual scroll, so it
+    // always reflects WHERE THE USER IS — not one frozen line. At the very
+    // top/bottom scrollTop just clamps, so the position can't shift there.
+    let distFromBottom = 0;
+    let steering = false; // true while we're driving scrollTop (a transition)
+    const captureDist = () => {
+      const el = scrollRef.current;
+      if (el) distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    };
+    const onListScroll = () => {
+      if (!steering) captureDist(); // user scrolled while idle -> remember the spot
+    };
     let raf = 0;
     const setH = () => {
-      const h = `${vv ? vv.height : window.innerHeight}px`;
+      const el = scrollRef.current;
+      const newH = vv ? vv.height : window.innerHeight;
+      const h = `${newH}px`;
+      const offTop = vv ? vv.offsetTop : 0;
+      // "stable" = nothing is animating this frame. We only steer scroll while the
+      // viewport is actually changing; once stable the user can scroll freely.
+      const stable = Math.abs(newH - prevH) < 1 && Math.abs(offTop - prevOffTop) < 1;
+      const prevScroll = el?.scrollTop ?? 0;
+      steering = !stable;
+      prevH = newH;
+      prevOffTop = offTop;
+
       html.style.height = h;
       body.style.height = h;
       // Pin the sticky header to the top of the visible viewport.
       if (stickyHeaderRef.current) {
-        stickyHeaderRef.current.style.top = `${vv ? vv.offsetTop : 0}px`;
+        stickyHeaderRef.current.style.top = `${offTop}px`;
+      }
+      // SHRINK the message list from the TOP by offsetTop. On Safari/Chrome/PWA
+      // (not Firefox) the keyboard pushes the visible viewport DOWN (offsetTop > 0)
+      // while our locked panel stays pinned to layout-top — so the list's top band
+      // sits ABOVE the visible area and its first messages are unreachable (you
+      // scroll to scrollTop:0 but the top is off-screen). The list is flex-1, so a
+      // top margin both drops it into view AND shrinks its height (the composer at
+      // the bottom is untouched) — exactly "narrow the dialog window from the top".
+      if (el) {
+        el.style.marginTop = offTop ? `${offTop}px` : "";
+        if (!stable) {
+          // Keep the line above the input fixed: same distance from the bottom.
+          el.scrollTop = el.scrollHeight - el.clientHeight - distFromBottom;
+        } else {
+          el.scrollTop = prevScroll; // settled: leave it alone (free scrolling)
+        }
       }
     };
     const onVV = () => {
@@ -348,16 +394,27 @@ export function ChatWidget() {
       if (e.cancelable) e.preventDefault();
     };
     setH();
+    captureDist();
     vv?.addEventListener("resize", onVV);
     vv?.addEventListener("scroll", onVV);
     window.addEventListener("resize", onVV);
     document.addEventListener("touchmove", onTouchMove, { passive: false });
+    // focusin/focusout = the reliable keyboard open/close triggers: snapshot the
+    // line above the input right before the viewport starts moving. The scroll
+    // listener keeps that snapshot current while the user reads.
+    document.addEventListener("focusin", captureDist);
+    document.addEventListener("focusout", captureDist);
+    scrollRef.current?.addEventListener("scroll", onListScroll, { passive: true });
+    const listEl = scrollRef.current;
     return () => {
       if (raf) cancelAnimationFrame(raf);
       vv?.removeEventListener("resize", onVV);
       vv?.removeEventListener("scroll", onVV);
       window.removeEventListener("resize", onVV);
       document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("focusin", captureDist);
+      document.removeEventListener("focusout", captureDist);
+      listEl?.removeEventListener("scroll", onListScroll);
       const restore = (el: HTMLElement, p: ReturnType<typeof save>) => {
         el.style.position = p.position;
         el.style.top = p.top;
@@ -370,6 +427,7 @@ export function ChatWidget() {
         el.style.overscrollBehavior = "";
       };
       if (page) page.style.display = prevPageDisplay;
+      if (scrollRef.current) scrollRef.current.style.marginTop = "";
       restore(html, prevHtml);
       restore(body, prevBody);
       window.scrollTo(0, scrollY);

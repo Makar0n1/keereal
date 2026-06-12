@@ -76,10 +76,34 @@ export function useChatAppShell(
     const prevPageDisplay = page?.style.display ?? "";
 
     const vv = window.visualViewport;
+    const list = paneRef.current?.querySelector(".chat-scroll") as HTMLElement | null;
+    let prevH = vv ? vv.height : window.innerHeight;
+    let prevOffTop = vv ? vv.offsetTop : 0;
+    // Keep the line above the input fixed through every open/close by holding the
+    // distance from the bottom constant during a transition. `distFromBottom` is
+    // captured on focusin/focusout and refreshed on manual scroll so it always
+    // tracks where the user is. See the guest for the full rationale.
+    let distFromBottom = 0;
+    let steering = false;
+    const captureDist = () => {
+      if (list) distFromBottom = list.scrollHeight - list.scrollTop - list.clientHeight;
+    };
+    const onListScroll = () => {
+      if (!steering) captureDist();
+    };
     let raf = 0;
     const setH = () => {
-      const h = `${vv ? vv.height : window.innerHeight}px`;
-      const offTop = `${vv ? vv.offsetTop : 0}px`;
+      const newH = vv ? vv.height : window.innerHeight;
+      const h = `${newH}px`;
+      const offTopPx = vv ? vv.offsetTop : 0;
+      const offTop = `${offTopPx}px`;
+      // "stable" = nothing animating this frame; only steer scroll while changing.
+      const stable = Math.abs(newH - prevH) < 1 && Math.abs(offTopPx - prevOffTop) < 1;
+      const prevScroll = list?.scrollTop ?? 0;
+      steering = !stable;
+      prevH = newH;
+      prevOffTop = offTopPx;
+
       // Exactly like the guest: size ONLY html/body to the visible viewport; the
       // pane is h-full (inherits) and we never touch its top/height. Anything
       // extra (pane top/height tracking) made Safari fly the composer.
@@ -87,6 +111,20 @@ export function useChatAppShell(
       body.style.height = h;
       if (stickyHeaderRef.current) {
         stickyHeaderRef.current.style.top = offTop;
+      }
+      // SHRINK the message list from the TOP by offsetTop. On Safari/Chrome/PWA
+      // (not Firefox) the keyboard pushes the visible viewport DOWN while the
+      // locked pane stays pinned to layout-top, so the list's top band is off
+      // screen and the first messages are unreachable. The list is flex-1, so a
+      // top margin drops it into view AND shrinks its height (composer untouched).
+      if (list) {
+        list.style.marginTop = offTopPx ? `${offTopPx}px` : "";
+        if (!stable) {
+          // Keep the line above the input fixed: same distance from the bottom.
+          list.scrollTop = list.scrollHeight - list.clientHeight - distFromBottom;
+        } else {
+          list.scrollTop = prevScroll; // settled: leave it alone (free scrolling)
+        }
       }
     };
     const onVV = () => {
@@ -115,16 +153,23 @@ export function useChatAppShell(
       if (e.cancelable) e.preventDefault();
     };
     setH();
+    captureDist();
     vv?.addEventListener("resize", onVV);
     vv?.addEventListener("scroll", onVV);
     window.addEventListener("resize", onVV);
     document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("focusin", captureDist);
+    document.addEventListener("focusout", captureDist);
+    list?.addEventListener("scroll", onListScroll, { passive: true });
     return () => {
       if (raf) cancelAnimationFrame(raf);
       vv?.removeEventListener("resize", onVV);
       vv?.removeEventListener("scroll", onVV);
       window.removeEventListener("resize", onVV);
       document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("focusin", captureDist);
+      document.removeEventListener("focusout", captureDist);
+      list?.removeEventListener("scroll", onListScroll);
       const restore = (el: HTMLElement, p: ReturnType<typeof save>) => {
         el.style.position = p.position;
         el.style.top = p.top;
@@ -136,6 +181,7 @@ export function useChatAppShell(
         el.style.margin = p.margin;
         el.style.overscrollBehavior = "";
       };
+      if (list) list.style.marginTop = "";
       restore(html, prevHtml);
       restore(body, prevBody);
       if (page) page.style.display = prevPageDisplay;
