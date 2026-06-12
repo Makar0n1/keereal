@@ -36,8 +36,13 @@ export function useChatAppShell(
     const crios = /crios/i.test(ua);
     const firefox = /fxios|firefox/i.test(ua);
     const safari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
+    const standalone =
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(display-mode: standalone)").matches) ||
+      (window.navigator as { standalone?: boolean }).standalone === true;
     setBottomPad(crios ? "pb-[120px]" : safari ? "pb-[46px]" : "pb-3");
-    setKbUpPad(safari ? "pb-[62px]" : crios ? "pb-[118px]" : "pb-3");
+    // Installed PWA has no browser chrome above the keyboard -> much smaller inset.
+    setKbUpPad(standalone ? "pb-[20px]" : safari ? "pb-[62px]" : crios ? "pb-[118px]" : "pb-3");
     setIsFirefox(firefox);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
